@@ -67,11 +67,13 @@ codex auth login                    # uses your OpenAI account
 gemini auth login                   # uses your Google account
 
 # 3. Add the marketplace & install
-claude plugin marketplace add github:cukas/claudes-ai-buddies
-claude plugin install claudes-ai-buddies
+claude plugin marketplace add cukas/claudes-ai-buddies
+claude plugin install claudes-ai-buddies@cukas
+
+# Done — start a new Claude Code session
 ```
 
-Start a new Claude Code session:
+Start a new session and you'll see:
 
 ```
 [AI Buddies] Ready — Codex codex-cli 0.101.0 (gpt-5.4-codex) Gemini 0.32.1 (gemini-2.5-pro)
