@@ -122,10 +122,11 @@ ai_buddies_session_dir() {
   echo "$dir"
 }
 
-# ── Get model from config cascade ───────────────────────────────────────────
-# Priority: plugin config → codex config.toml → fallback
+# ── Get codex model (optional override) ──────────────────────────────────────
+# Returns the model if explicitly configured, empty string otherwise.
+# When empty, codex uses its own default (from ~/.codex/config.toml or server).
 ai_buddies_codex_model() {
-  # 1. Plugin config
+  # 1. Plugin config override
   local model
   model="$(ai_buddies_config "codex_model" "")"
   if [[ -n "$model" ]]; then
@@ -133,7 +134,7 @@ ai_buddies_codex_model() {
     return 0
   fi
 
-  # 2. Codex config.toml
+  # 2. Read from codex config.toml (for display purposes)
   local codex_config="${HOME}/.codex/config.toml"
   if [[ -f "$codex_config" ]]; then
     local toml_model
@@ -144,8 +145,8 @@ ai_buddies_codex_model() {
     fi
   fi
 
-  # 3. Fallback
-  echo "gpt-5.4-codex"
+  # 3. No override — let codex use its own default
+  echo ""
 }
 
 # ── Find gemini binary ───────────────────────────────────────────────────────
@@ -190,17 +191,11 @@ ai_buddies_gemini_version() {
   "$gemini_bin" --version 2>/dev/null | head -1
 }
 
-# ── Get gemini model ────────────────────────────────────────────────────────
-# Priority: plugin config → fallback
+# ── Get gemini model (optional override) ─────────────────────────────────────
+# Returns the model if explicitly configured, empty string otherwise.
+# When empty, gemini uses its own default (latest from server).
 ai_buddies_gemini_model() {
-  local model
-  model="$(ai_buddies_config "gemini_model" "")"
-  if [[ -n "$model" ]]; then
-    echo "$model"
-    return 0
-  fi
-
-  echo "gemini-2.5-pro"
+  ai_buddies_config "gemini_model" ""
 }
 
 # ── Get sandbox mode ────────────────────────────────────────────────────────

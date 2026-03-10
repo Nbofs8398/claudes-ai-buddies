@@ -109,7 +109,10 @@ CODEX_ARGS=(
   exec
   --ephemeral
   "--${SANDBOX}"
-  --model "$MODEL"
+)
+# Only pass --model if explicitly set (otherwise codex uses its own default)
+[[ -n "$MODEL" ]] && CODEX_ARGS+=(--model "$MODEL")
+CODEX_ARGS+=(
   -o "$OUTPUT_FILE"
   "$FINAL_PROMPT"
 )

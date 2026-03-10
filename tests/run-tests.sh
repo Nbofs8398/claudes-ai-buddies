@@ -169,9 +169,9 @@ test_start "ai_buddies_codex_version returns version"
 result=$(ai_buddies_codex_version)
 assert_contains "$result" "codex-cli"
 
-test_start "ai_buddies_codex_model fallback to gpt-5.4-codex"
+test_start "ai_buddies_codex_model returns empty when no override"
 result=$(ai_buddies_codex_model)
-assert_eq "$result" "gpt-5.4-codex"
+assert_eq "$result" ""
 
 test_start "ai_buddies_codex_model reads from config"
 ai_buddies_config_set "codex_model" "gpt-custom"
@@ -192,9 +192,9 @@ test_start "ai_buddies_gemini_version returns version"
 result=$(ai_buddies_gemini_version)
 assert_contains "$result" "0.32.1"
 
-test_start "ai_buddies_gemini_model fallback to gemini-2.5-pro"
+test_start "ai_buddies_gemini_model returns empty when no override"
 result=$(ai_buddies_gemini_model)
-assert_eq "$result" "gemini-2.5-pro"
+assert_eq "$result" ""
 
 test_start "ai_buddies_gemini_model reads from config"
 ai_buddies_config_set "gemini_model" "gemini-custom"

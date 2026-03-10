@@ -137,11 +137,14 @@ run_with_timeout() {
 
 EXIT_CODE=0
 cd "$CWD"
+# Build gemini args — only pass --model if explicitly set
+GEMINI_ARGS=(-p "$FINAL_PROMPT")
+[[ -n "$MODEL" ]] && GEMINI_ARGS+=(--model "$MODEL")
+
 # Gemini uses -p for non-interactive (headless) mode, output goes to stdout
 # shellcheck disable=SC2086
 run_with_timeout "$TIMEOUT" "$GEMINI_BIN" \
-  -p "$FINAL_PROMPT" \
-  --model "$MODEL" \
+  "${GEMINI_ARGS[@]}" \
   $GEMINI_SANDBOX_FLAG \
   > "$OUTPUT_FILE" 2>"$ERROR_FILE" || EXIT_CODE=$?
 

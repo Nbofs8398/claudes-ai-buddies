@@ -21,8 +21,8 @@ Config file: `~/.claudes-ai-buddies/config.json`
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `codex_model` | *(from ~/.codex/config.toml)* | Override Codex model |
-| `gemini_model` | `gemini-2.5-pro` | Override Gemini model |
+| `codex_model` | *(CLI default)* | Override Codex model (omit to use latest) |
+| `gemini_model` | *(CLI default)* | Override Gemini model (omit to use latest) |
 | `timeout` | `120` | Max seconds per call |
 | `sandbox` | `full-auto` | Sandbox mode (`full-auto` or `suggest`) |
 | `codex_path` | *(auto-detected)* | Explicit path to codex binary |

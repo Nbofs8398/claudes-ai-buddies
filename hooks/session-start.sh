@@ -17,6 +17,7 @@ codex_bin="$(ai_buddies_find_codex 2>/dev/null)" || codex_bin=""
 if [[ -n "$codex_bin" ]]; then
   codex_version=$("$codex_bin" --version 2>/dev/null | head -1 || echo "unknown")
   codex_model=$(ai_buddies_codex_model)
+  [[ -z "$codex_model" ]] && codex_model="default"
   engines+=("Codex ${codex_version} (${codex_model})")
 fi
 
@@ -24,6 +25,7 @@ gemini_bin="$(ai_buddies_find_gemini 2>/dev/null)" || gemini_bin=""
 if [[ -n "$gemini_bin" ]]; then
   gemini_version=$("$gemini_bin" --version 2>/dev/null | head -1 || echo "unknown")
   gemini_model=$(ai_buddies_gemini_model)
+  [[ -z "$gemini_model" ]] && gemini_model="default"
   engines+=("Gemini ${gemini_version} (${gemini_model})")
 fi
 

@@ -70,8 +70,8 @@ Available: /codex, /codex-review, /gemini, /gemini-review
 
 | Engine | CLI | Model | Status |
 |--------|-----|-------|--------|
-| **OpenAI Codex** | `codex` | gpt-5.4-codex | ✅ Fully supported |
-| **Google Gemini** | `gemini` | gemini-2.5-pro | ✅ Fully supported |
+| **OpenAI Codex** | `codex` | latest (or override via config) | ✅ Fully supported |
+| **Google Gemini** | `gemini` | latest (or override via config) | ✅ Fully supported |
 
 > Install only what you need. The plugin auto-detects available engines at session start.
 
@@ -110,12 +110,14 @@ Optional — works out of the box. Config at `~/.claudes-ai-buddies/config.json`
 ```json
 {
   "codex_model": "gpt-5.4-codex",
-  "gemini_model": "gemini-2.5-pro",
+  "gemini_model": "gemini-3.0-pro",
   "timeout": "120",
   "sandbox": "full-auto",
   "debug": "false"
 }
 ```
+
+> Models are optional. When not set, each CLI uses its own latest default — no need to keep versions in sync manually.
 
 | Key | Default | Description |
 |-----|---------|-------------|
