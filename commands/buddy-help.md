@@ -1,5 +1,5 @@
 ---
-name: codex-help
+name: buddy-help
 description: Reference for Claude's AI Buddies plugin
 ---
 
@@ -13,7 +13,7 @@ description: Reference for Claude's AI Buddies plugin
 | `/codex-review` | Codex | Code review via Codex (uncommitted, branch, commit) |
 | `/gemini "prompt"` | Gemini | Ask Gemini anything — brainstorm, delegate, second opinion |
 | `/gemini-review` | Gemini | Code review via Gemini (uncommitted, branch, commit) |
-| `/codex-help` | — | This help reference |
+| `/buddy-help` | — | This help reference |
 
 ## Configuration
 

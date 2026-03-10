@@ -338,8 +338,8 @@ assert_file_exists "${PLUGIN_ROOT}/skills/gemini/SKILL.md"
 test_start "gemini-review SKILL.md exists"
 assert_file_exists "${PLUGIN_ROOT}/skills/gemini-review/SKILL.md"
 
-test_start "codex-help.md exists"
-assert_file_exists "${PLUGIN_ROOT}/commands/codex-help.md"
+test_start "buddy-help.md exists"
+assert_file_exists "${PLUGIN_ROOT}/commands/buddy-help.md"
 
 test_start "codex-run.sh exists"
 assert_file_exists "${PLUGIN_ROOT}/scripts/codex-run.sh"

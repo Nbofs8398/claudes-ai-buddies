@@ -64,7 +64,7 @@ Available: /codex, /codex-review, /gemini, /gemini-review
 
 | Command | What it does |
 |---------|-------------|
-| `/codex-help` | Full reference, config options, troubleshooting |
+| `/buddy-help` | Full reference, config options, troubleshooting |
 
 ## 🤖 Supported Engines
 
