@@ -14,18 +14,30 @@ The user says `/brainstorm "topic or question"`.
 ## Step-by-step workflow
 
 1. **Parse the user's prompt.** Extract the topic/question from the user's message.
-2. **Run both engines in parallel.** Use a single message with TWO Bash tool calls — one for Codex, one for Gemini. Both use `--mode exec`.
+2. **Wrap the prompt with roundtable context.** Before sending to each engine, prepend this framing so they know they're in a multi-AI discussion:
+
+```
+You are participating in a multi-AI roundtable discussion alongside Claude (Anthropic) and [OTHER_ENGINE].
+Share your unique perspective on the topic below. Be direct, opinionated, and specific.
+Don't try to cover everything — focus on what you think matters most and where you might disagree with other AI perspectives.
+
+Topic: USER_TOPIC_HERE
+```
+
+Replace `[OTHER_ENGINE]` with the name of the other participating AI (e.g., "Gemini (Google)" when talking to Codex, "Codex (OpenAI)" when talking to Gemini).
+
+3. **Run both engines in parallel.** Use a single message with TWO Bash tool calls — one for Codex, one for Gemini. Both use `--mode exec`.
 
 ```bash
 # Call 1 (parallel)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/codex-run.sh" \
-  --prompt "TOPIC_HERE" \
+  --prompt "WRAPPED_PROMPT" \
   --cwd "/path/to/project" \
   --mode exec
 
 # Call 2 (parallel)
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-run.sh" \
-  --prompt "TOPIC_HERE" \
+  --prompt "WRAPPED_PROMPT" \
   --cwd "/path/to/project" \
   --mode exec
 ```
