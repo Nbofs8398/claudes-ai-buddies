@@ -48,7 +48,7 @@ Recommendation: Claude — highest confidence, already knows the codebase
 ```
 
 **Why this works:**
-- **~400 tokens total** — cheaper than Claude reasoning through it alone. The scoping that would cost Claude thousands of tokens gets split across three cheap parallel calls
+- **Other engines burn their tokens, not yours.** The heavy thinking — "how would I approach this, what are the risks" — gets offloaded to Codex and Gemini on their own API bills. Claude only spends ~200 tokens on calibration and the table. Compare that to Claude reasoning through it solo at 2000-5000 tokens
 - **Claude calibrates the bids** — each engine has a different confidence scale. Claude reads the actual approaches, adjusts inflated or deflated scores, and gives you a calibrated recommendation. "Codex says 80% but the approach skips error handling — realistic ~60%"
 - **Three training sets catch blind spots** — each model has weaknesses the others don't. The disagreements are the most valuable signal
 - **Zero wasted compute** — only the winner does the actual work
