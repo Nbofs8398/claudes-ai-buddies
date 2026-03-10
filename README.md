@@ -3,7 +3,7 @@
 <img src="assets/banner.svg" alt="Claude's AI Buddies" width="100%"/>
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-39%2F39-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-41%2F41-brightgreen.svg)](#testing)
 [![Claude Code Plugin](https://img.shields.io/badge/Claude_Code-plugin-blueviolet.svg)](https://github.com/cukas/claude-plugins)
 
 *Spawn peer AI CLIs directly from Claude Code. No MCP. No flaky connections. Just direct CLI calls.*
@@ -41,10 +41,20 @@ That's it. Start a new Claude Code session and you'll see:
 
 ```
 [AI Buddies] Ready — Codex codex-cli 0.101.0 (gpt-5.4-codex) Gemini 0.32.1 (gemini-2.5-pro)
-Available: /codex, /codex-review, /gemini, /gemini-review
+Available: /codex, /codex-review, /gemini, /gemini-review, /brainstorm
 ```
 
 ## 🎯 Skills
+
+### Confidence Bid
+
+| Command | Engines | What it does |
+|---------|---------|-------------|
+| `/brainstorm "task"` | All available | Each AI rates confidence on a task — user picks who takes it |
+
+Ask all available engines to assess a bug fix, implementation, or refactor. Each gives a confidence %, approach, risks, and needs. Claude presents a comparison table. You pick who does the work.
+
+Works with any combination — Codex only, Gemini only, or both. Claude always participates.
 
 ### Ask anything
 
@@ -76,6 +86,21 @@ Available: /codex, /codex-review, /gemini, /gemini-review
 > Install only what you need. The plugin auto-detects available engines at session start.
 
 ## 📖 Examples
+
+**Confidence bid — who should take this task?**
+```
+/brainstorm "Fix the race condition in the WebSocket reconnection handler"
+```
+
+```
+| | Claude | Codex | Gemini |
+|---|---|---|---|
+| Confidence | 85% | 70% | 60% |
+| Approach | Trace reconnect flow... | Add mutex lock... | Use exponential backoff... |
+| Risks | Might miss edge case... | Could deadlock... | Doesn't fix root cause... |
+
+Recommendation: Claude — highest confidence, knows the codebase
+```
 
 **Brainstorm with Codex:**
 ```
@@ -154,7 +179,7 @@ bash tests/run-tests.sh
 ```
 === claudes-ai-buddies test suite ===
   ...
-=== Results: 39/39 passed, 0 failed ===
+=== Results: 41/41 passed, 0 failed ===
 ```
 
 ## 📦 Part of the cukas Plugin Ecosystem
