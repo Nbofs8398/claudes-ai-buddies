@@ -157,6 +157,26 @@ else
   test_fail "expected escaped quotes in: $result"
 fi
 
+test_start "ai_buddies_run_with_timeout succeeds within limit"
+result=$(ai_buddies_run_with_timeout 5 echo "hello" 2>&1)
+assert_eq "$result" "hello"
+
+test_start "ai_buddies_run_with_timeout returns 124 on timeout"
+ec=0
+ai_buddies_run_with_timeout 1 sleep 10 2>/dev/null || ec=$?
+assert_eq "$ec" "124"
+
+test_start "ai_buddies_build_review_prompt includes diff header"
+REVIEW_TEST_REPO=$(mktemp -d)
+cd "$REVIEW_TEST_REPO"
+git init -q
+echo "init" > f.txt && git add f.txt && git commit -q -m "init"
+echo "changed" > f.txt
+result=$(ai_buddies_build_review_prompt "check this" "$REVIEW_TEST_REPO" "uncommitted")
+cd "$PLUGIN_ROOT"
+rm -rf "$REVIEW_TEST_REPO"
+assert_contains "$result" "code review"
+
 # ── lib.sh — codex tests ────────────────────────────────────────────────────
 echo ""
 echo "--- lib.sh (codex) ---"

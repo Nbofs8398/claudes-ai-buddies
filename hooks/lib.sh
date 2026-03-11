@@ -208,6 +208,72 @@ ai_buddies_timeout() {
   ai_buddies_config "timeout" "120"
 }
 
+# ── Timeout wrapper (shared by all scripts) ─────────────────────────────────
+# Usage: ai_buddies_run_with_timeout SECS COMMAND [ARGS...]
+ai_buddies_run_with_timeout() {
+  local timeout_secs="$1"
+  shift
+
+  if command -v gtimeout &>/dev/null; then
+    gtimeout "${timeout_secs}s" "$@"
+  elif command -v timeout &>/dev/null; then
+    timeout "${timeout_secs}s" "$@"
+  else
+    # Perl-based fallback for macOS without coreutils
+    perl -e '
+      alarm shift @ARGV;
+      $SIG{ALRM} = sub { kill 9, $pid; exit 124 };
+      $pid = fork;
+      if ($pid == 0) { exec @ARGV; die "exec failed: $!" }
+      waitpid $pid, 0;
+      exit ($? >> 8);
+    ' "$timeout_secs" "$@"
+  fi
+}
+
+# ── Build review prompt (shared by codex-run.sh and gemini-run.sh) ──────────
+# Usage: ai_buddies_build_review_prompt "user_prompt" "cwd" "target"
+ai_buddies_build_review_prompt() {
+  local prompt="$1"
+  local cwd="$2"
+  local target="$3"
+  local diff_content=""
+
+  case "$target" in
+    uncommitted)
+      diff_content=$(cd "$cwd" && git diff HEAD 2>/dev/null || git diff 2>/dev/null || echo "(no diff available)")
+      ;;
+    branch:*)
+      local branch="${target#branch:}"
+      diff_content=$(cd "$cwd" && git diff "${branch}...HEAD" 2>/dev/null || echo "(no diff for branch ${branch})")
+      ;;
+    commit:*)
+      local sha="${target#commit:}"
+      diff_content=$(cd "$cwd" && git show "$sha" 2>/dev/null || echo "(no diff for commit ${sha})")
+      ;;
+    *)
+      diff_content=$(cd "$cwd" && git diff HEAD 2>/dev/null || echo "(no diff available)")
+      ;;
+  esac
+
+  cat <<EOF
+You are reviewing code changes. Provide a thorough code review covering:
+- Bugs and logic errors
+- Security vulnerabilities
+- Performance issues
+- Code quality and readability
+- Suggestions for improvement
+
+Here are the changes to review:
+
+\`\`\`diff
+${diff_content}
+\`\`\`
+
+${prompt}
+EOF
+}
+
 # ── JSON escape ──────────────────────────────────────────────────────────────
 ai_buddies_escape_json() {
   local input="$1"

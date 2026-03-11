@@ -36,28 +36,6 @@ done
 
 ai_buddies_debug "forge-fitness: label=$LABEL, cmd=$CMD, dir=$DIR, timeout=$TIMEOUT"
 
-# ── Timeout wrapper (same as codex-run.sh / gemini-run.sh) ──────────────────
-run_with_timeout() {
-  local timeout_secs="$1"
-  shift
-
-  if command -v gtimeout &>/dev/null; then
-    gtimeout "${timeout_secs}s" "$@"
-  elif command -v timeout &>/dev/null; then
-    timeout "${timeout_secs}s" "$@"
-  else
-    # Perl-based fallback for macOS without coreutils
-    perl -e '
-      alarm shift @ARGV;
-      $SIG{ALRM} = sub { kill 9, $pid; exit 124 };
-      $pid = fork;
-      if ($pid == 0) { exec @ARGV; die "exec failed: $!" }
-      waitpid $pid, 0;
-      exit ($? >> 8);
-    ' "$timeout_secs" "$@"
-  fi
-}
-
 # ── Stage new files so git diff sees them ────────────────────────────────────
 cd "$DIR"
 git add -A 2>/dev/null || true
@@ -66,7 +44,7 @@ git add -A 2>/dev/null || true
 START_SEC=$(date +%s)
 EXIT_CODE=0
 TIMED_OUT=false
-OUTPUT=$(run_with_timeout "$TIMEOUT" bash -lc "$CMD" 2>&1) || EXIT_CODE=$?
+OUTPUT=$(ai_buddies_run_with_timeout "$TIMEOUT" bash -lc "$CMD" 2>&1) || EXIT_CODE=$?
 DURATION=$(( $(date +%s) - START_SEC ))
 
 if [[ $EXIT_CODE -eq 124 ]]; then
@@ -100,10 +78,10 @@ if command -v jq &>/dev/null; then
     '{label:$label, pass:$pass, timed_out:$timed_out, exit_code:$exit_code, duration_sec:$duration, files_changed:$files, diff_lines:$diff_lines, output:$output}' \
     > "$RESULT_FILE"
 else
-  # Fallback: use jq-safe values only (label is sanitized via --label flag)
   SAFE_LABEL=$(printf '%s' "$LABEL" | tr -cd 'a-zA-Z0-9_-')
+  SAFE_OUTPUT=$(ai_buddies_escape_json "$OUTPUT")
   cat > "$RESULT_FILE" <<EOF
-{"label":"$SAFE_LABEL","pass":$PASS,"timed_out":$TIMED_OUT,"exit_code":$EXIT_CODE,"duration_sec":$DURATION,"files_changed":$FILES_CHANGED,"diff_lines":$DIFF_LINES}
+{"label":"$SAFE_LABEL","pass":$PASS,"timed_out":$TIMED_OUT,"exit_code":$EXIT_CODE,"duration_sec":$DURATION,"files_changed":$FILES_CHANGED,"diff_lines":$DIFF_LINES,"output":$SAFE_OUTPUT}
 EOF
 fi
 

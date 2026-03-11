@@ -57,53 +57,12 @@ OUTPUT_FILE="${SESSION_DIR}/gemini-output-${TIMESTAMP}.md"
 ERROR_FILE="${SESSION_DIR}/gemini-error-${TIMESTAMP}.log"
 
 # ── Build the prompt ─────────────────────────────────────────────────────────
-build_review_prompt() {
-  local diff_content=""
-  local target="$1"
-
-  case "$target" in
-    uncommitted)
-      diff_content=$(cd "$CWD" && git diff HEAD 2>/dev/null || git diff 2>/dev/null || echo "(no diff available)")
-      ;;
-    branch:*)
-      local branch="${target#branch:}"
-      diff_content=$(cd "$CWD" && git diff "${branch}...HEAD" 2>/dev/null || echo "(no diff for branch ${branch})")
-      ;;
-    commit:*)
-      local sha="${target#commit:}"
-      diff_content=$(cd "$CWD" && git show "$sha" 2>/dev/null || echo "(no diff for commit ${sha})")
-      ;;
-    *)
-      diff_content=$(cd "$CWD" && git diff HEAD 2>/dev/null || echo "(no diff available)")
-      ;;
-  esac
-
-  cat <<EOF
-You are reviewing code changes. Provide a thorough code review covering:
-- Bugs and logic errors
-- Security vulnerabilities
-- Performance issues
-- Code quality and readability
-- Suggestions for improvement
-
-Here are the changes to review:
-
-\`\`\`diff
-${diff_content}
-\`\`\`
-
-${PROMPT}
-EOF
-}
-
 FINAL_PROMPT="$PROMPT"
 if [[ "$MODE" == "review" ]]; then
-  FINAL_PROMPT="$(build_review_prompt "$REVIEW_TARGET")"
+  FINAL_PROMPT="$(ai_buddies_build_review_prompt "$PROMPT" "$CWD" "$REVIEW_TARGET")"
 fi
 
 # ── Map sandbox to gemini CLI flags ──────────────────────────────────────────
-# Gemini uses: --sandbox (boolean) + --approval-mode yolo|default|auto_edit|plan
-# NOT --sandbox <value> — that's a different CLI (codex).
 GEMINI_SANDBOX_ARGS=()
 case "$SANDBOX" in
   full-auto) GEMINI_SANDBOX_ARGS=(--sandbox --approval-mode yolo) ;;
@@ -114,36 +73,12 @@ esac
 # ── Run gemini ───────────────────────────────────────────────────────────────
 ai_buddies_debug "gemini-run: executing gemini -p"
 
-# macOS timeout: use gtimeout (coreutils) or perl fallback
-run_with_timeout() {
-  local timeout_secs="$1"
-  shift
-
-  if command -v gtimeout &>/dev/null; then
-    gtimeout "${timeout_secs}s" "$@"
-  elif command -v timeout &>/dev/null; then
-    timeout "${timeout_secs}s" "$@"
-  else
-    # Perl-based fallback for macOS without coreutils
-    perl -e '
-      alarm shift @ARGV;
-      $SIG{ALRM} = sub { kill 9, $pid; exit 124 };
-      $pid = fork;
-      if ($pid == 0) { exec @ARGV; die "exec failed: $!" }
-      waitpid $pid, 0;
-      exit ($? >> 8);
-    ' "$timeout_secs" "$@"
-  fi
-}
-
-EXIT_CODE=0
-cd "$CWD"
-# Build gemini args — only pass --model if explicitly set
 GEMINI_ARGS=(-p "$FINAL_PROMPT")
 [[ -n "$MODEL" ]] && GEMINI_ARGS+=(--model "$MODEL")
 
-# Gemini uses -p for non-interactive (headless) mode, output goes to stdout
-run_with_timeout "$TIMEOUT" "$GEMINI_BIN" \
+EXIT_CODE=0
+cd "$CWD"
+ai_buddies_run_with_timeout "$TIMEOUT" "$GEMINI_BIN" \
   "${GEMINI_ARGS[@]}" \
   "${GEMINI_SANDBOX_ARGS[@]}" \
   > "$OUTPUT_FILE" 2>"$ERROR_FILE" || EXIT_CODE=$?
