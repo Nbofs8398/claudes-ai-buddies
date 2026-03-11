@@ -11,13 +11,13 @@ Three AI engines independently implement the same task, compete on automated fit
 
 The user says `/forge "task description" --fitness "test command"`.
 
-Optional: `--timeout SECS` to override engine time limit (default: 300s). For complex tasks, use `--timeout 600`.
+Optional: `--timeout SECS` to override the safety cap (default: 600s). Engines self-exit when done — the timeout is just a safety net, not a target.
 
 ## Step-by-step workflow
 
 ### Phase 0: Setup
 
-1. **Parse args.** Extract the task, `--fitness` command, and optional `--timeout` (default 300s). If no `--fitness`, ask the user.
+1. **Parse args.** Extract the task, `--fitness` command, and optional `--timeout` (default 600s). If no `--fitness`, ask the user.
 2. **Detect engines.** Source lib.sh and check binaries:
 
 ```bash
@@ -51,7 +51,7 @@ Then **send available peer engines in parallel** (one Bash call per engine, sing
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/{codex,gemini}-run.sh" \
   --prompt "IMPLEMENT_PROMPT" \
   --cwd "$FORGE_DIR/wt-{engine}" \
-  --mode exec --timeout $FORGE_TIMEOUT
+  --mode exec --timeout $FORGE_TIMEOUT  # default 600s — engines self-exit when done
 ```
 
 **Implementation prompt** (replace TASK and FITNESS):
@@ -66,6 +66,7 @@ RULES:
 - Write the actual code — do not plan or ask questions.
 - Modify only files necessary. Follow existing conventions.
 - After implementing, RUN the fitness test yourself. If it fails, fix and retry until it passes.
+- Exit when you're confident the fitness test passes. Take the time you need.
 - Be thorough but minimal. Fewest lines changed wins ties.
 ```
 
@@ -149,6 +150,6 @@ rm -rf "$FORGE_DIR"
 - **Require `--fitness`.** No automated scoring = no forge.
 - **Never touch user's working tree** until Phase 5 with explicit approval.
 - **Always clean up** worktrees, even on error.
-- **Time budget:** Default 300s per engine (user can override with `--timeout`). 120s for fitness. Two rounds max.
+- **Time budget:** Default 600s safety cap per engine (user can override with `--timeout`). Engines self-exit when done. 120s for fitness. Two rounds max.
 - **Check engine output** for `TIMEOUT:`/`ERROR:` markers before proceeding.
 - **Stage before diffing:** `git add -A` then `git diff --cached` to capture new files.
