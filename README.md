@@ -28,6 +28,8 @@ You → /brainstorm "fix the auth bug" → Claude + Codex + Gemini each bid → 
 
 ## Confidence Bid — the headline feature
 
+<img src="assets/demo.gif" alt="Brainstorm demo — confidence bid in action" width="100%"/>
+
 ```
 /brainstorm "Fix the race condition in the WebSocket reconnection handler"
 ```
