@@ -3,10 +3,10 @@
 <img src="assets/banner.svg" alt="Claude's AI Buddies" width="100%"/>
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-41%2F41-brightgreen.svg)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-58%2F58-brightgreen.svg)](#-testing)
 [![Claude Code Plugin](https://img.shields.io/badge/Claude_Code-plugin-blueviolet.svg)](https://github.com/cukas/claude-plugins)
 
-*Three AI engines. One decision. You pick who builds it.*
+*Three AI engines. One codebase. They compete, you ship.*
 
 </div>
 
@@ -14,19 +14,79 @@
 
 ## The Idea
 
-What if you could pitch a task to three AI engines at once — and pick the one that's most confident?
+What if three AI engines could compete on the same coding task — and only the best implementation wins?
 
-**AI Buddies** connects Claude Code to peer AI CLIs. Ask a question, get a code review, or run a **confidence bid** where Claude, Codex, and Gemini each assess a task honestly. You see who's confident, who's hesitant, and why — then you pick who does the work.
+**AI Buddies** connects Claude Code to peer AI CLIs. Run **confidence bids** to pick who handles a task, get cross-model **code reviews**, or launch a **forge** where all three engines independently build, test, and refine the same solution.
 
 ```
-You → /brainstorm "fix the auth bug" → Claude + Codex + Gemini each bid → You pick → Winner builds it
+/brainstorm "task"  →  Three AIs bid confidence  →  You pick who builds it
+/forge "task"       →  Three AIs build in parallel  →  Fitness tests decide the winner
 ```
 
 > Install only the engines you want. Works with just Codex, just Gemini, or both.
 
 ---
 
-## Confidence Bid — the headline feature
+## Forge — the flagship feature (v2.0)
+
+Three AI engines independently implement the same task in isolated git worktrees. Automated fitness tests score each solution. The best one wins.
+
+```
+/forge "Add input validation to math utils" --fitness "node src/math.test.js"
+```
+
+```
+## Forge Scoreboard: Add input validation
+
+| | Claude | Codex | Gemini |
+|---|---|---|---|
+| Fitness | FAIL | PASS | PASS |
+| Duration | 4s | 12s | 8s |
+| Files changed | 1 | 1 | 1 |
+| Diff size | 33 lines | 41 lines | 27 lines |
+
+Winner: Gemini — passed fitness with smallest diff.
+```
+
+**How it works:**
+
+1. **Diverge** — each engine implements the task in its own git worktree. They self-test and iterate using their own internal loops (Claude's subagents, Codex's `--full-auto`, Gemini's `--yolo`)
+2. **Crucible** — `forge-fitness.sh` runs your test suite against all solutions. JSON scores: pass/fail, duration, files changed, diff size
+3. **Scoreboard** — results presented side by side. Objective winner based on fitness + simplicity
+4. **Cross-pollinate** *(optional)* — each engine sees all three solutions and refines the winner. Second generation inherits the best ideas from all three
+5. **Converge** — you approve the winning diff before it touches your working tree
+
+**Why this works:**
+- **Three different training sets** = three different approaches to the same problem. Blind spots cancel out
+- **Fitness tests, not vibes** — automated scoring means the best code wins, not the most confident pitch
+- **Engines self-correct** — each gets up to 600s to implement, test, fix, and iterate. No artificial time pressure
+- **Graceful degradation** — works with 3, 2, or 1 engine. Timeouts and errors don't block the forge
+
+---
+
+## Using Forge in Your Planning Workflow
+
+`/forge` isn't a separate planner — it plugs into your existing workflow (`/build-guard`, plan mode, or any task list). Tag tricky tasks with `[forge]` during planning:
+
+```
+## Plan: Add retry logic to sidecar connection
+
+1. Add RetryConfig type to shared types
+2. [forge] Implement exponential backoff with jitter algorithm
+3. Wire retry config into python-manager.ts
+4. [forge] Add circuit breaker pattern for repeated failures
+5. Add retry status to UI connection indicator
+```
+
+Claude handles the straightforward tasks directly. `[forge]` tasks trigger three-way competition. Best of both worlds.
+
+**What to forge:** Algorithms, scoring logic, race condition fixes, performance-critical code — anything where three perspectives beat one.
+
+**What NOT to forge:** Types, imports, config, UI layout — things with one obvious answer.
+
+---
+
+## Confidence Bid
 
 <img src="assets/demo.gif" alt="Brainstorm demo — confidence bid in action" width="100%"/>
 
@@ -34,7 +94,7 @@ You → /brainstorm "fix the auth bug" → Claude + Codex + Gemini each bid → 
 /brainstorm "Fix the race condition in the WebSocket reconnection handler"
 ```
 
-Each available engine assesses the task and gives a realistic confidence rating:
+Each engine assesses the task honestly. Claude calibrates the scores and recommends who should take it.
 
 ```
 | | Claude (Anthropic) | Codex (OpenAI) | Gemini (Google) |
@@ -44,16 +104,14 @@ Each available engine assesses the task and gives a realistic confidence rating:
 | | find state leak | shared connection | with jitter |
 | Risks | Might miss edge case | Could deadlock if | Doesn't fix root cause, |
 | | in retry logic | not scoped right | just masks it |
-| Needs | Access to WS module | Connection manager | Full error logs |
 
 Recommendation: Claude — highest confidence, already knows the codebase
 ```
 
 **Why this works:**
-- **Other engines burn their tokens, not yours.** The heavy thinking — "how would I approach this, what are the risks" — gets offloaded to Codex and Gemini on their own API bills. Claude only spends ~200 tokens on calibration and the table. Compare that to Claude reasoning through it solo at 2000-5000 tokens
-- **Claude calibrates the bids** — each engine has a different confidence scale. Claude reads the actual approaches, adjusts inflated or deflated scores, and gives you a calibrated recommendation. "Codex says 80% but the approach skips error handling — realistic ~60%"
-- **Three training sets catch blind spots** — each model has weaknesses the others don't. The disagreements are the most valuable signal
-- **Zero wasted compute** — only the winner does the actual work
+- **Other engines burn their tokens, not yours** — heavy thinking offloaded to Codex/Gemini on their API bills
+- **Claude calibrates the bids** — adjusts inflated/deflated scores based on actual approach quality
+- **Three training sets catch blind spots** — disagreements are the most valuable signal
 
 ---
 
@@ -79,7 +137,7 @@ Start a new session and you'll see:
 
 ```
 [AI Buddies] Ready — Codex codex-cli 0.101.0 (gpt-5.4-codex) Gemini 0.32.1 (gemini-2.5-pro)
-Available: /codex, /codex-review, /gemini, /gemini-review, /brainstorm
+Available: /codex, /codex-review, /gemini, /gemini-review, /brainstorm, /forge
 ```
 
 ---
@@ -88,6 +146,7 @@ Available: /codex, /codex-review, /gemini, /gemini-review, /brainstorm
 
 | Command | Engines | What it does |
 |---------|---------|-------------|
+| `/forge "task" --fitness "cmd"` | All available | Three-way build competition with automated fitness scoring |
 | `/brainstorm "task"` | All available | Confidence bid — each AI rates the task, you pick who builds it |
 | `/codex "prompt"` | Codex | Ask Codex anything — delegate, brainstorm, second opinion |
 | `/gemini "prompt"` | Gemini | Ask Gemini anything — different model, different perspective |
@@ -98,6 +157,11 @@ Available: /codex, /codex-review, /gemini, /gemini-review, /brainstorm
 ---
 
 ## Examples
+
+**Forge a tricky algorithm:**
+```
+/forge "Implement exponential backoff with jitter" --fitness "npm test"
+```
 
 **Confidence bid — who should take this?**
 ```
@@ -125,40 +189,35 @@ Available: /codex, /codex-review, /gemini, /gemini-review, /brainstorm
 /codex-review branch:main "focus on security and SQL injection"
 ```
 
-**Review a specific commit:**
-```
-/gemini-review commit:a1b2c3d
-```
-
----
-
-## Supported Engines
-
-| Engine | CLI | Model | Status |
-|--------|-----|-------|--------|
-| **OpenAI Codex** | `codex` | latest (or override) | Fully supported |
-| **Google Gemini** | `gemini` | latest (or override) | Fully supported |
-
-> Install only what you need. The plugin auto-detects at session start. `/brainstorm` works with one engine or both — Claude always participates.
-
 ---
 
 ## How It Works
 
 ```
 ┌──────────┐     ┌──────────────┐     ┌─────────────┐     ┌──────────────┐
-│   User   │────▶│  Claude Code  │────▶│  Wrapper.sh  │────▶│  Peer AI CLI  │
+│   User   │────>│  Claude Code  │────>│  Wrapper.sh  │────>│  Peer AI CLI  │
 │          │     │  (orchestrator│     │  (timeout,   │     │  (codex exec  │
-│          │◀────│   + judge)    │◀────│   capture)   │◀────│   gemini -p)  │
+│          │<────│   + judge)    │<────│   capture)   │<────│   gemini -p)  │
 └──────────┘     └──────────────┘     └─────────────┘     └──────────────┘
                   reads output file    writes to temp file   runs headless
 ```
 
+**For `/forge`**, each engine gets its own isolated git worktree:
+```
+/tmp/ai-buddies-session/forge-1234/
+├── wt-claude/   ← Claude implements here
+├── wt-codex/    ← Codex implements here (via codex exec --full-auto)
+├── wt-gemini/   ← Gemini implements here (via gemini --yolo)
+├── claude-patch.diff
+├── codex-patch.diff
+└── gemini-patch.diff
+```
+
 - **No MCP servers** — direct CLI subprocess calls
 - **No API keys in transit** — each engine uses its own auth
-- **Stateless** — every call is ephemeral, no persistent state
-- **Parallel execution** — engines run simultaneously, not sequentially
-- **Timeout-safe** — configurable timeout with graceful handling
+- **Parallel execution** — engines run simultaneously
+- **Timeout-safe** — 600s safety cap, engines self-exit when done
+- **Always cleans up** — detached worktrees, no branch leaks
 
 ---
 
@@ -180,7 +239,7 @@ Optional — works out of the box. Config at `~/.claudes-ai-buddies/config.json`
 |-----|---------|-------------|
 | `codex_model` | *CLI default* | Codex model override |
 | `gemini_model` | *CLI default* | Gemini model override |
-| `timeout` | `120` | Max seconds per call |
+| `timeout` | `120` | Max seconds per call (forge uses its own 600s default) |
 | `sandbox` | `full-auto` | `full-auto` or `suggest` |
 | `codex_path` | *auto-detected* | Explicit codex binary path |
 | `gemini_path` | *auto-detected* | Explicit gemini binary path |
@@ -199,7 +258,7 @@ bash tests/run-tests.sh
 ```
 === claudes-ai-buddies test suite ===
   ...
-=== Results: 41/41 passed, 0 failed ===
+=== Results: 58/58 passed, 0 failed ===
 ```
 
 ---
