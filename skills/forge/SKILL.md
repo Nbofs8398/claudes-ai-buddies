@@ -9,11 +9,53 @@ Three AI engines independently implement the same task, compete on automated fit
 
 ## How to invoke
 
-The user says `/forge "task description" --fitness "test command"`.
+**Direct forge** — user specifies a focused task:
+```
+/forge "Add NaN guard to scoring" --fitness "npx jest"
+```
+
+**Plan-then-forge** — user describes a larger feature, Claude plans it:
+```
+/forge plan "Add retry logic to the sidecar connection" --fitness "npx jest"
+```
 
 Optional: `--timeout SECS` to override the safety cap (default: 600s). Engines self-exit when done — the timeout is just a safety net, not a target.
 
-## Step-by-step workflow
+## Plan-then-forge mode
+
+When the user says `/forge plan "feature"` or asks to "plan it and forge the critical parts":
+
+1. **Claude plans the feature** — break it into discrete tasks. For each task, tag it:
+   - `[forge]` — algorithmic, tricky, multiple valid approaches, benefits from competition
+   - `[direct]` — straightforward wiring, config, boilerplate — Claude handles alone
+
+2. **Present the plan** to the user. Example:
+   ```
+   ## Plan: Add retry logic to sidecar connection
+
+   1. [direct]  Add RetryConfig type to shared types
+   2. [forge]   Implement exponential backoff with jitter algorithm
+   3. [direct]  Wire retry config into python-manager.ts
+   4. [forge]   Add circuit breaker pattern for repeated failures
+   5. [direct]  Add retry status to UI connection indicator
+   ```
+
+3. **User approves** (or adjusts which tasks get forged).
+
+4. **Execute sequentially:**
+   - `[direct]` tasks: Claude implements normally
+   - `[forge]` tasks: run the full forge workflow (diverge → fitness → scoreboard → converge)
+   - After each forge, apply the winner before moving to the next task
+
+5. **Between tasks**, commit the working state so each forge starts from a clean base.
+
+**What to forge:** Algorithms, scoring logic, data transformations, race condition fixes, performance-critical code, anything where "three minds > one."
+
+**What NOT to forge:** Types, imports, config, UI layout, wiring, glue code — things with one obvious answer.
+
+---
+
+## Step-by-step workflow (single forge)
 
 ### Phase 0: Setup
 
