@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# claudes-ai-buddies — forge orchestrator
-# Creates peer worktrees, dispatches engines in parallel, runs fitness, writes manifest.
-# Expects wt-claude/ to already exist (Claude implements via Edit tool).
+# claudes-ai-buddies — forge orchestrator v2
+# Staged escalation: starter → challengers → synthesis.
+# Claude is a PURE orchestrator — all engines (including claude) run as subprocesses.
 # Usage: forge-run.sh --forge-dir DIR --task "DESC" --fitness "CMD" [--timeout SECS]
+#        [--starter ENGINE] [--engines claude,codex,gemini]
 
 set -euo pipefail
 
@@ -17,6 +18,13 @@ TASK=""
 FITNESS=""
 TIMEOUT="$(ai_buddies_forge_timeout)"
 FITNESS_TIMEOUT="120"
+STARTER=""
+REQUESTED_ENGINES=""
+AUTO_ACCEPT="$(ai_buddies_forge_auto_accept_score)"
+CLEAR_SPREAD="$(ai_buddies_forge_clear_winner_spread)"
+ENABLE_SYNTHESIS="$(ai_buddies_forge_enable_synthesis)"
+BASELINE_CHECK="$(ai_buddies_forge_require_baseline_check)"
+CWD=""
 
 # ── Parse arguments ──────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -26,6 +34,9 @@ while [[ $# -gt 0 ]]; do
     --fitness)         FITNESS="$2";         shift 2 ;;
     --timeout)         TIMEOUT="$2";         shift 2 ;;
     --fitness-timeout) FITNESS_TIMEOUT="$2"; shift 2 ;;
+    --starter)         STARTER="$2";         shift 2 ;;
+    --engines)         REQUESTED_ENGINES="$2"; shift 2 ;;
+    --cwd)             CWD="$2";              shift 2 ;;
     *)
       echo "ERROR: Unknown argument: $1" >&2
       exit 1
@@ -39,186 +50,326 @@ done
 
 ai_buddies_debug "forge-run: forge_dir=$FORGE_DIR, task=$TASK, timeout=$TIMEOUT"
 
-# ── Cleanup trap — kill orphan background processes on interrupt ──────────────
+# ── Cleanup trap ─────────────────────────────────────────────────────────────
 _FORGE_RUN_PIDS=()
+_FORGE_RUN_WTS=()
+_FORGE_RUN_REPO_ROOT=""
 _forge_run_cleanup() {
-  for pid in "${_FORGE_RUN_PIDS[@]}"; do
-    kill -TERM "$pid" 2>/dev/null || true
-  done
-  ai_buddies_debug "forge-run: cleanup trap fired, killed ${#_FORGE_RUN_PIDS[@]} background PIDs"
+  # Kill background PIDs
+  if [[ ${#_FORGE_RUN_PIDS[@]} -gt 0 ]]; then
+    for pid in "${_FORGE_RUN_PIDS[@]}"; do
+      kill -TERM "$pid" 2>/dev/null || true
+    done
+  fi
+  # Prune any worktrees created during this run
+  if [[ -n "$_FORGE_RUN_REPO_ROOT" && ${#_FORGE_RUN_WTS[@]} -gt 0 ]]; then
+    for wt in "${_FORGE_RUN_WTS[@]}"; do
+      git -C "$_FORGE_RUN_REPO_ROOT" worktree remove "$wt" --force 2>/dev/null || true
+    done
+  fi
+  ai_buddies_debug "forge-run: cleanup trap fired, killed ${#_FORGE_RUN_PIDS[@]} PIDs, removed ${#_FORGE_RUN_WTS[@]} WTs"
 }
 trap _forge_run_cleanup EXIT INT TERM
 
-# ── Detect engines ───────────────────────────────────────────────────────────
+# ── Detect available engines ─────────────────────────────────────────────────
+CLAUDE_BIN=$(ai_buddies_find_claude 2>/dev/null) || CLAUDE_BIN=""
 CODEX_BIN=$(ai_buddies_find_codex 2>/dev/null) || CODEX_BIN=""
 GEMINI_BIN=$(ai_buddies_find_gemini 2>/dev/null) || GEMINI_BIN=""
 
-ENGINES=(claude)
-[[ -n "$CODEX_BIN" ]]  && ENGINES+=(codex)
-[[ -n "$GEMINI_BIN" ]] && ENGINES+=(gemini)
+ALL_AVAILABLE=()
+[[ -n "$CLAUDE_BIN" ]] && ALL_AVAILABLE+=(claude)
+[[ -n "$CODEX_BIN" ]]  && ALL_AVAILABLE+=(codex)
+[[ -n "$GEMINI_BIN" ]] && ALL_AVAILABLE+=(gemini)
 
-ai_buddies_debug "forge-run: engines=${ENGINES[*]}"
+# Filter by requested engines if specified
+ENGINES=()
+if [[ -n "$REQUESTED_ENGINES" ]]; then
+  IFS=',' read -ra requested <<< "$REQUESTED_ENGINES"
+  for r in "${requested[@]}"; do
+    for a in "${ALL_AVAILABLE[@]}"; do
+      [[ "$r" == "$a" ]] && ENGINES+=("$r")
+    done
+  done
+else
+  ENGINES=("${ALL_AVAILABLE[@]}")
+fi
 
-# ── Validate claude worktree exists ──────────────────────────────────────────
-if [[ ! -d "${FORGE_DIR}/wt-claude" ]]; then
-  echo "ERROR: ${FORGE_DIR}/wt-claude/ must exist (Claude implements via Edit tool)" >&2
+if [[ ${#ENGINES[@]} -eq 0 ]]; then
+  echo "ERROR: No engines available" >&2
   exit 1
 fi
 
-# ── Gather project context (F4) ─────────────────────────────────────────────
-CONTEXT=""
-CONTEXT_FILE="${FORGE_DIR}/context.txt"
-CONTEXT=$(ai_buddies_project_context "${FORGE_DIR}/wt-claude")
-if [[ -n "$CONTEXT" ]]; then
-  printf '%s' "$CONTEXT" > "$CONTEXT_FILE"
-  ai_buddies_debug "forge-run: project context saved to ${CONTEXT_FILE}"
+ai_buddies_debug "forge-run: available engines=${ENGINES[*]}"
+
+# ── Pick starter engine ──────────────────────────────────────────────────────
+if [[ -z "$STARTER" ]]; then
+  STARTER=$(ai_buddies_forge_pick_starter "$(IFS=,; echo "${ENGINES[*]}")")
 fi
+ai_buddies_debug "forge-run: starter=$STARTER"
 
-# ── Build prompt ─────────────────────────────────────────────────────────────
-FORGE_PROMPT=$(ai_buddies_build_forge_prompt "$TASK" "$FITNESS" "$CONTEXT")
+# Separate starter from challengers
+CHALLENGERS=()
+for e in "${ENGINES[@]}"; do
+  [[ "$e" != "$STARTER" ]] && CHALLENGERS+=("$e")
+done
 
-# ── Create peer worktrees & dispatch ─────────────────────────────────────────
-PIDS=()
-PEER_ENGINES=()
+# ── Resolve repo root from explicit --cwd or fallback to pwd ─────────────────
+# Using --cwd ensures correct repo even when invoked from a different directory.
+FORGE_CWD="${CWD:-$(pwd)}"
+REPO_ROOT=$(cd "$FORGE_CWD" && git rev-parse --show-toplevel 2>/dev/null) || REPO_ROOT=""
+HEAD_SHA=$(cd "$FORGE_CWD" && git rev-parse HEAD 2>/dev/null) || HEAD_SHA=""
+_FORGE_RUN_REPO_ROOT="$REPO_ROOT"
 
-# Find git dir from claude worktree
-GIT_DIR=$(cd "${FORGE_DIR}/wt-claude" && git rev-parse --git-common-dir 2>/dev/null) || GIT_DIR=""
-REPO_ROOT=""
-if [[ -n "$GIT_DIR" ]]; then
-  REPO_ROOT=$(cd "${FORGE_DIR}/wt-claude" && git rev-parse --show-toplevel 2>/dev/null) || true
-fi
-
-for engine in "${ENGINES[@]}"; do
-  [[ "$engine" == "claude" ]] && continue  # claude already implemented
-  wt="${FORGE_DIR}/wt-${engine}"
-
-  # Create worktree from the same HEAD as claude
-  if [[ -n "$REPO_ROOT" ]]; then
-    head_sha=$(cd "${FORGE_DIR}/wt-claude" && git rev-parse HEAD)
-    git -C "$REPO_ROOT" worktree add --detach "$wt" "$head_sha" 2>/dev/null || {
+# ── Helper: create worktree for an engine ────────────────────────────────────
+# NOTE: Do NOT call via $(...) command substitution — that runs in a subshell
+# and _FORGE_RUN_WTS updates would be lost. Use _create_worktree_for instead.
+_create_worktree_for() {
+  local engine="$1"
+  _LAST_WORKTREE="${FORGE_DIR}/wt-${engine}"
+  if [[ -n "$REPO_ROOT" && -n "$HEAD_SHA" ]]; then
+    git -C "$REPO_ROOT" worktree prune 2>/dev/null || true
+    git -C "$REPO_ROOT" worktree add --detach "$_LAST_WORKTREE" "$HEAD_SHA" >/dev/null 2>&1 || {
       ai_buddies_debug "forge-run: failed to create worktree for $engine"
-      continue
+      _LAST_WORKTREE=""
+      return 1
     }
+    _FORGE_RUN_WTS+=("$_LAST_WORKTREE")
   else
-    ai_buddies_debug "forge-run: cannot determine repo root, skipping $engine"
-    continue
+    ai_buddies_debug "forge-run: cannot determine repo root"
+    _LAST_WORKTREE=""
+    return 1
   fi
+}
 
-  PEER_ENGINES+=("$engine")
-  ai_buddies_debug "forge-run: created worktree for $engine at $wt"
+# ── Helper: dispatch a single engine ─────────────────────────────────────────
+_dispatch_engine() {
+  local engine="$1"
+  local wt="$2"
+  local prompt="$3"
+  local timeout="$4"
 
-  # Dispatch engine
   case "$engine" in
-    codex)
-      bash "${PLUGIN_ROOT}/scripts/codex-run.sh" \
-        --prompt "$FORGE_PROMPT" \
+    claude)
+      bash "${PLUGIN_ROOT}/scripts/claude-run.sh" \
+        --prompt "$prompt" \
         --cwd "$wt" \
         --mode exec \
-        --timeout "$TIMEOUT" \
-        > "${FORGE_DIR}/${engine}-output.txt" 2>&1 &
-      PIDS+=($!); _FORGE_RUN_PIDS+=($!)
+        --timeout "$timeout" \
+        > "${FORGE_DIR}/${engine}-output.txt" 2>&1
+      ;;
+    codex)
+      bash "${PLUGIN_ROOT}/scripts/codex-run.sh" \
+        --prompt "$prompt" \
+        --cwd "$wt" \
+        --mode exec \
+        --timeout "$timeout" \
+        > "${FORGE_DIR}/${engine}-output.txt" 2>&1
       ;;
     gemini)
       bash "${PLUGIN_ROOT}/scripts/gemini-run.sh" \
-        --prompt "$FORGE_PROMPT" \
+        --prompt "$prompt" \
         --cwd "$wt" \
         --mode exec \
-        --timeout "$TIMEOUT" \
-        > "${FORGE_DIR}/${engine}-output.txt" 2>&1 &
-      PIDS+=($!); _FORGE_RUN_PIDS+=($!)
+        --timeout "$timeout" \
+        > "${FORGE_DIR}/${engine}-output.txt" 2>&1
       ;;
   esac
-done
+}
 
-# ── Wait for all peers ───────────────────────────────────────────────────────
-ai_buddies_debug "forge-run: waiting for ${#PIDS[@]} peer engines"
-for pid in "${PIDS[@]}"; do
-  wait "$pid" 2>/dev/null || true
-done
-ai_buddies_debug "forge-run: all peers finished"
+# ── Helper: score an engine's worktree ───────────────────────────────────────
+_score_engine() {
+  local engine="$1"
+  local wt="${FORGE_DIR}/wt-${engine}"
+  [[ -d "$wt" ]] || return 1
 
-# ── Generate diffs for all engines ───────────────────────────────────────────
-for engine in "${ENGINES[@]}"; do
-  wt="${FORGE_DIR}/wt-${engine}"
-  [[ -d "$wt" ]] || continue
+  # Generate diff
   (cd "$wt" && git add -A && git diff --cached > "${FORGE_DIR}/${engine}-patch.diff") 2>/dev/null || true
-done
 
-# ── Run fitness on ALL worktrees ─────────────────────────────────────────────
-FITNESS_PIDS=()
-FITNESS_LABELS=()
+  # Check for empty diff (no-op)
+  local diff_size
+  diff_size=$(wc -c < "${FORGE_DIR}/${engine}-patch.diff" 2>/dev/null | tr -d ' ')
+  if (( diff_size == 0 )); then
+    ai_buddies_debug "forge-run: $engine produced empty diff (no-op)"
+  fi
 
-for engine in "${ENGINES[@]}"; do
-  wt="${FORGE_DIR}/wt-${engine}"
-  [[ -d "$wt" ]] || continue
-  FITNESS_LABELS+=("$engine")
-
-  bash "${PLUGIN_ROOT}/scripts/forge-fitness.sh" \
+  # Run fitness
+  local fitness_output
+  fitness_output=$(bash "${PLUGIN_ROOT}/scripts/forge-fitness.sh" \
     --dir "$wt" \
     --cmd "$FITNESS" \
     --label "$engine" \
-    --timeout "$FITNESS_TIMEOUT" \
-    > "${FORGE_DIR}/${engine}-fitness-path.txt" 2>&1 &
-  FITNESS_PIDS+=($!); _FORGE_RUN_PIDS+=($!)
-done
+    --timeout "$FITNESS_TIMEOUT" 2>&1 | tail -1)
 
-for pid in "${FITNESS_PIDS[@]}"; do
-  wait "$pid" 2>/dev/null || true
-done
-ai_buddies_debug "forge-run: all fitness tests complete"
+  echo "$fitness_output"
+}
 
-# ── Run quality scoring (F5) on all engines ──────────────────────────────────
-for engine in "${ENGINES[@]}"; do
-  wt="${FORGE_DIR}/wt-${engine}"
-  diff_file="${FORGE_DIR}/${engine}-patch.diff"
-  [[ -d "$wt" ]] || continue
+# ── Helper: read score from fitness result ───────────────────────────────────
+_read_score() {
+  local fitness_file="$1"
+  local score=0
+  if [[ -f "$fitness_file" ]] && command -v jq &>/dev/null; then
+    score=$(jq -r '.composite_score // 0' "$fitness_file" 2>/dev/null || echo 0)
+  fi
+  echo "$score"
+}
 
-  score_json=$(bash "${PLUGIN_ROOT}/scripts/forge-score.sh" \
-    --dir "$wt" \
-    --diff "$diff_file" \
-    --label "$engine" 2>/dev/null) || score_json='{"lint_warnings":0,"style_score":100}'
+_read_pass() {
+  local fitness_file="$1"
+  local pass=false
+  if [[ -f "$fitness_file" ]] && command -v jq &>/dev/null; then
+    pass=$(jq -r '.pass // false' "$fitness_file" 2>/dev/null || echo false)
+  fi
+  echo "$pass"
+}
 
-  echo "$score_json" > "${FORGE_DIR}/${engine}-score.json"
-done
+# ── Gather task-scoped context (v2: lighter than full project context) ──────
+CONTEXT=""
+CONTEXT_FILE="${FORGE_DIR}/context.txt"
+CONTEXT=$(ai_buddies_task_context "$FORGE_CWD" "$TASK")
+if [[ -n "$CONTEXT" ]]; then
+  printf '%s' "$CONTEXT" > "$CONTEXT_FILE"
+fi
 
-# ── Collect results and determine winner ─────────────────────────────────────
+# ── Build compressed prompt ──────────────────────────────────────────────────
+FORGE_PROMPT=$(ai_buddies_build_forge_prompt "$TASK" "$FITNESS" "$CONTEXT")
+
+# ── Phase 0: Baseline preflight ─────────────────────────────────────────────
+BASELINE_ALREADY_PASSES=false
+if [[ "$BASELINE_CHECK" == "true" ]]; then
+  ai_buddies_debug "forge-run: running baseline fitness check"
+  if _create_worktree_for "baseline"; then
+    BASELINE_WT="$_LAST_WORKTREE"
+    BASELINE_EXIT=0
+    (cd "$BASELINE_WT" && bash -lc "$FITNESS") >/dev/null 2>&1 || BASELINE_EXIT=$?
+    if [[ $BASELINE_EXIT -eq 0 ]]; then
+      BASELINE_ALREADY_PASSES=true
+      # Warning to stderr only — stdout is reserved for manifest path
+      echo "WARNING: fitness already passes on untouched code — test may be non-discriminating" >&2
+      ai_buddies_debug "forge-run: WARNING — fitness already passes on base code"
+    fi
+    # Clean up baseline worktree
+    git -C "$REPO_ROOT" worktree remove "$BASELINE_WT" --force 2>/dev/null || true
+  fi
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STAGE 1: Run starter engine alone
+# ══════════════════════════════════════════════════════════════════════════════
+ai_buddies_debug "forge-run: STAGE 1 — dispatching starter: $STARTER"
+
+_create_worktree_for "$STARTER" || {
+  echo "ERROR: Failed to create worktree for starter $STARTER" >&2
+  exit 1
+}
+STARTER_WT="$_LAST_WORKTREE"
+
+_dispatch_engine "$STARTER" "$STARTER_WT" "$FORGE_PROMPT" "$TIMEOUT"
+
+# Score starter
+STARTER_FITNESS_FILE=$(_score_engine "$STARTER")
+STARTER_SCORE=$(_read_score "$STARTER_FITNESS_FILE")
+STARTER_PASS=$(_read_pass "$STARTER_FITNESS_FILE")
+
+ai_buddies_debug "forge-run: starter $STARTER pass=$STARTER_PASS score=$STARTER_SCORE"
+
+# Sanitize for arithmetic
+STARTER_SCORE_INT="${STARTER_SCORE%%.*}"; STARTER_SCORE_INT="${STARTER_SCORE_INT//[!0-9]/}"; STARTER_SCORE_INT="${STARTER_SCORE_INT:-0}"
+AUTO_ACCEPT_INT="${AUTO_ACCEPT%%.*}"; AUTO_ACCEPT_INT="${AUTO_ACCEPT_INT//[!0-9]/}"; AUTO_ACCEPT_INT="${AUTO_ACCEPT_INT:-88}"
+
+# Check auto-accept gate
+STAGE1_ACCEPTED=false
+if [[ "$STARTER_PASS" == "true" ]] && (( STARTER_SCORE_INT >= AUTO_ACCEPT_INT )); then
+  # Additional gates: lint and style
+  STARTER_LINT=0
+  STARTER_STYLE=100
+  if [[ -f "$STARTER_FITNESS_FILE" ]] && command -v jq &>/dev/null; then
+    STARTER_LINT=$(jq -r '.lint_warnings // 0' "$STARTER_FITNESS_FILE" 2>/dev/null || echo 0)
+    STARTER_STYLE=$(jq -r '.style_score // 100' "$STARTER_FITNESS_FILE" 2>/dev/null || echo 100)
+  fi
+  STARTER_LINT_INT="${STARTER_LINT%%.*}"; STARTER_LINT_INT="${STARTER_LINT_INT//[!0-9]/}"; STARTER_LINT_INT="${STARTER_LINT_INT:-0}"
+  STARTER_STYLE_INT="${STARTER_STYLE%%.*}"; STARTER_STYLE_INT="${STARTER_STYLE_INT//[!0-9]/}"; STARTER_STYLE_INT="${STARTER_STYLE_INT:-100}"
+
+  if (( STARTER_LINT_INT <= 2 && STARTER_STYLE_INT >= 90 )); then
+    STAGE1_ACCEPTED=true
+    ai_buddies_debug "forge-run: STAGE 1 auto-accepted (score=$STARTER_SCORE_INT, lint=$STARTER_LINT_INT, style=$STARTER_STYLE_INT)"
+  fi
+fi
+
+# Track all scored engines (fitness files stored as engine:path pairs in indexed array)
+SCORED_ENGINES=("$STARTER")
+ENGINE_FITNESS_PAIRS=("${STARTER}:${STARTER_FITNESS_FILE}")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STAGE 2: Dispatch challengers (if starter didn't auto-accept)
+# ══════════════════════════════════════════════════════════════════════════════
+if [[ "$STAGE1_ACCEPTED" != "true" ]] && [[ ${#CHALLENGERS[@]} -gt 0 ]]; then
+  ai_buddies_debug "forge-run: STAGE 2 — dispatching challengers: ${CHALLENGERS[*]}"
+
+  CHALLENGER_PIDS=()
+  ACTIVE_CHALLENGERS=()
+
+  for engine in "${CHALLENGERS[@]}"; do
+    _create_worktree_for "$engine" || continue
+    wt="$_LAST_WORKTREE"
+    ACTIVE_CHALLENGERS+=("$engine")
+
+    _dispatch_engine "$engine" "$wt" "$FORGE_PROMPT" "$TIMEOUT" &
+    CHALLENGER_PIDS+=($!); _FORGE_RUN_PIDS+=($!)
+  done
+
+  # Wait for all challengers
+  for pid in "${CHALLENGER_PIDS[@]}"; do
+    wait "$pid" 2>/dev/null || true
+  done
+  ai_buddies_debug "forge-run: all challengers finished"
+
+  # Score challengers
+  for engine in "${ACTIVE_CHALLENGERS[@]}"; do
+    fitness_file=$(_score_engine "$engine")
+    SCORED_ENGINES+=("$engine")
+    ENGINE_FITNESS_PAIRS+=("${engine}:${fitness_file}")
+  done
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SCORING: Collect results and determine winner
+# ══════════════════════════════════════════════════════════════════════════════
 RESULTS_JSON="{}"
 PATCHES_JSON="{}"
 WINNER="none"
 BEST_SCORE=0
+SECOND_SCORE=0
 
-for engine in "${ENGINES[@]}"; do
-  # Read fitness result
-  fitness_path_file="${FORGE_DIR}/${engine}-fitness-path.txt"
+for engine in "${SCORED_ENGINES[@]}"; do
+  # Look up fitness file from pairs array
+  fitness_file=""
+  for pair in "${ENGINE_FITNESS_PAIRS[@]}"; do
+    if [[ "${pair%%:*}" == "$engine" ]]; then
+      fitness_file="${pair#*:}"
+      break
+    fi
+  done
   fitness_json="{}"
-  if [[ -f "$fitness_path_file" ]]; then
-    fitness_file=$(tail -1 "$fitness_path_file")
-    [[ -f "$fitness_file" ]] && fitness_json=$(cat "$fitness_file")
-  fi
+  [[ -f "$fitness_file" ]] && fitness_json=$(cat "$fitness_file" 2>/dev/null || echo "{}")
 
-  # Read quality score
-  score_file="${FORGE_DIR}/${engine}-score.json"
-  lint_warnings=0
-  style_score=100
-  if [[ -f "$score_file" ]] && command -v jq &>/dev/null; then
-    lint_warnings=$(jq -r '.lint_warnings // 0' "$score_file" 2>/dev/null || echo 0)
-    style_score=$(jq -r '.style_score // 100' "$score_file" 2>/dev/null || echo 100)
-  fi
-
-  # Extract fitness fields
+  # Extract fields
   pass="false"
   diff_lines=0
   files_changed=0
   duration=0
+  lint_warnings=0
+  style_score=100
+  composite=0
+
   if command -v jq &>/dev/null && [[ "$fitness_json" != "{}" ]]; then
     pass=$(echo "$fitness_json" | jq -r '.pass // false' 2>/dev/null || echo false)
     diff_lines=$(echo "$fitness_json" | jq -r '.diff_lines // 0' 2>/dev/null || echo 0)
     files_changed=$(echo "$fitness_json" | jq -r '.files_changed // 0' 2>/dev/null || echo 0)
     duration=$(echo "$fitness_json" | jq -r '.duration_sec // 0' 2>/dev/null || echo 0)
+    lint_warnings=$(echo "$fitness_json" | jq -r '.lint_warnings // 0' 2>/dev/null || echo 0)
+    style_score=$(echo "$fitness_json" | jq -r '.style_score // 100' 2>/dev/null || echo 100)
+    composite=$(echo "$fitness_json" | jq -r '.composite_score // 0' 2>/dev/null || echo 0)
   fi
-
-  # Compute composite score
-  composite=$(ai_buddies_compute_forge_score "$pass" "$diff_lines" "$files_changed" "$duration" "$lint_warnings" "$style_score")
 
   # Build per-engine result
   engine_result=$(jq -n \
@@ -232,7 +383,6 @@ for engine in "${ENGINES[@]}"; do
     '{pass:$pass, score:$score, diff_lines:$diff_lines, files_changed:$files_changed, duration_sec:$duration, lint_warnings:$lint_warnings, style_score:$style_score}' 2>/dev/null) || \
     engine_result="{\"pass\":${pass},\"score\":${composite}}"
 
-  # Use temp variable to avoid losing previous results on jq failure
   if next_results=$(echo "$RESULTS_JSON" | jq --arg e "$engine" --argjson r "$engine_result" '.[$e] = $r' 2>/dev/null); then
     RESULTS_JSON="$next_results"
   fi
@@ -245,10 +395,16 @@ for engine in "${ENGINES[@]}"; do
     fi
   fi
 
-  # Track winner
-  if (( composite > BEST_SCORE )); then
-    BEST_SCORE=$composite
+  # Sanitize composite for arithmetic
+  composite_int="${composite%%.*}"; composite_int="${composite_int//[!0-9]/}"; composite_int="${composite_int:-0}"
+
+  # Deterministic tiebreaker: score > lint(fewer) > style(higher) > diff(fewer) > files(fewer) > duration(less)
+  if (( composite_int > BEST_SCORE )); then
+    SECOND_SCORE=$BEST_SCORE
+    BEST_SCORE=$composite_int
     WINNER="$engine"
+  elif (( composite_int > SECOND_SCORE )); then
+    SECOND_SCORE=$composite_int
   fi
 
   ai_buddies_debug "forge-run: $engine pass=$pass score=$composite"
@@ -256,19 +412,15 @@ done
 
 # ── Check for close call ─────────────────────────────────────────────────────
 CLOSE_CALL=false
-if command -v jq &>/dev/null; then
-  scores=$(echo "$RESULTS_JSON" | jq '[.[].score]' 2>/dev/null)
-  max_score=$(echo "$scores" | jq 'max // 0' 2>/dev/null || echo 0)
-  second=$(echo "$scores" | jq 'sort | reverse | .[1] // 0' 2>/dev/null || echo 0)
-  if (( max_score > 0 && (max_score - second) <= 5 )); then
-    CLOSE_CALL=true
-    ai_buddies_debug "forge-run: close call detected (spread <= 5pts)"
-  fi
+SPREAD_INT="${CLEAR_SPREAD%%.*}"; SPREAD_INT="${SPREAD_INT//[!0-9]/}"; SPREAD_INT="${SPREAD_INT:-8}"
+if (( BEST_SCORE > 0 && (BEST_SCORE - SECOND_SCORE) < SPREAD_INT )); then
+  CLOSE_CALL=true
+  ai_buddies_debug "forge-run: close call (spread=$((BEST_SCORE - SECOND_SCORE)) < ${SPREAD_INT})"
 fi
 
 # ── Write manifest ───────────────────────────────────────────────────────────
 FORGE_ID=$(basename "$FORGE_DIR")
-ENGINES_CSV=$(IFS=,; echo "${ENGINES[*]}")
+ENGINES_CSV=$(IFS=,; echo "${SCORED_ENGINES[*]}")
 ai_buddies_forge_manifest \
   "${FORGE_DIR}/manifest.json" \
   "$FORGE_ID" \
@@ -279,10 +431,43 @@ ai_buddies_forge_manifest \
   "$PATCHES_JSON" \
   "$WINNER"
 
-# Add close_call field
-if [[ "$CLOSE_CALL" == "true" ]] && command -v jq &>/dev/null; then
+# Add metadata fields
+if command -v jq &>/dev/null; then
   tmp="${FORGE_DIR}/manifest.json.tmp"
-  jq '.close_call = true' "${FORGE_DIR}/manifest.json" > "$tmp" && mv "$tmp" "${FORGE_DIR}/manifest.json"
+  jq \
+    --argjson close_call "$([[ "$CLOSE_CALL" == "true" ]] && echo true || echo false)" \
+    --argjson stage1_accepted "$([[ "$STAGE1_ACCEPTED" == "true" ]] && echo true || echo false)" \
+    --argjson baseline_passes "$([[ "$BASELINE_ALREADY_PASSES" == "true" ]] && echo true || echo false)" \
+    --arg starter "$STARTER" \
+    --argjson engines_dispatched "${#SCORED_ENGINES[@]}" \
+    '. + {close_call:$close_call, stage1_accepted:$stage1_accepted, baseline_passes:$baseline_passes, starter:$starter, engines_dispatched:$engines_dispatched}' \
+    "${FORGE_DIR}/manifest.json" > "$tmp" && mv "$tmp" "${FORGE_DIR}/manifest.json"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STAGE 3: Synthesis (if close call and synthesis enabled)
+# ══════════════════════════════════════════════════════════════════════════════
+if [[ "$CLOSE_CALL" == "true" && "$ENABLE_SYNTHESIS" == "true" && ${#SCORED_ENGINES[@]} -gt 1 ]]; then
+  # Check at least 2 engines passed
+  PASSING_COUNT=0
+  if command -v jq &>/dev/null; then
+    PASSING_COUNT=$(echo "$RESULTS_JSON" | jq '[.[] | select(.pass == true)] | length' 2>/dev/null || echo 0)
+  fi
+
+  if (( PASSING_COUNT >= 2 )); then
+    ai_buddies_debug "forge-run: STAGE 3 — running synthesis ($PASSING_COUNT passing, close call)"
+    bash "${PLUGIN_ROOT}/scripts/forge-synthesize.sh" \
+      --forge-dir "$FORGE_DIR" \
+      --winner "$WINNER" \
+      --fitness "$FITNESS" \
+      --timeout "$TIMEOUT" \
+      --fitness-timeout "$FITNESS_TIMEOUT" \
+      > "${FORGE_DIR}/synth-run-output.txt" 2>&1 || true
+  else
+    ai_buddies_debug "forge-run: skipping synthesis (only $PASSING_COUNT engines passed)"
+  fi
+else
+  ai_buddies_debug "forge-run: skipping synthesis (close_call=$CLOSE_CALL, enabled=$ENABLE_SYNTHESIS, engines=${#SCORED_ENGINES[@]})"
 fi
 
 # ── Output manifest path ────────────────────────────────────────────────────

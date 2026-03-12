@@ -33,6 +33,37 @@ done
 
 ai_buddies_debug "forge-spectest: task=$TASK, cwd=$CWD, timeout=$TIMEOUT"
 
+# ── Safe test command allowlist ─────────────────────────────────────────────
+_SAFE_TEST_PREFIXES=(
+  "npm test"
+  "npx jest"
+  "npx vitest"
+  "pytest"
+  "python -m pytest"
+  "go test"
+  "cargo test"
+  "make test"
+  "make check"
+  "bun test"
+  "bash tests/"
+  "./test"
+)
+
+_is_safe_test_cmd() {
+  local cmd="$1"
+  # Reject shell metacharacters that could chain or redirect commands
+  local unsafe_pattern='[;&|`$()<>]'
+  if [[ "$cmd" =~ $unsafe_pattern ]]; then
+    return 1
+  fi
+  for prefix in "${_SAFE_TEST_PREFIXES[@]}"; do
+    if [[ "$cmd" == "$prefix"* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 # ── Cleanup trap — kill orphan processes + remove worktrees on interrupt ─────
 _SPECTEST_PIDS=()
 _SPECTEST_WTS=()
@@ -53,15 +84,17 @@ _spectest_cleanup() {
 trap _spectest_cleanup EXIT INT TERM
 
 # ── Detect engines ───────────────────────────────────────────────────────────
+CLAUDE_BIN=$(ai_buddies_find_claude 2>/dev/null) || CLAUDE_BIN=""
 CODEX_BIN=$(ai_buddies_find_codex 2>/dev/null) || CODEX_BIN=""
 GEMINI_BIN=$(ai_buddies_find_gemini 2>/dev/null) || GEMINI_BIN=""
 
 ENGINES=()
+[[ -n "$CLAUDE_BIN" ]] && ENGINES+=(claude)
 [[ -n "$CODEX_BIN" ]]  && ENGINES+=(codex)
 [[ -n "$GEMINI_BIN" ]] && ENGINES+=(gemini)
 
 if [[ ${#ENGINES[@]} -eq 0 ]]; then
-  echo "ERROR: No peer engines available for spectest" >&2
+  echo "ERROR: No engines available for spectest" >&2
   exit 1
 fi
 
@@ -103,6 +136,15 @@ for engine in "${ENGINES[@]}"; do
   _SPECTEST_WTS+=("$wt")
 
   case "$engine" in
+    claude)
+      bash "${PLUGIN_ROOT}/scripts/claude-run.sh" \
+        --prompt "$SPECTEST_PROMPT" \
+        --cwd "$wt" \
+        --mode exec \
+        --timeout "$TIMEOUT" \
+        > "${SPECTEST_DIR}/${engine}-output.txt" 2>&1 &
+      PIDS+=($!); _SPECTEST_PIDS+=($!)
+      ;;
     codex)
       bash "${PLUGIN_ROOT}/scripts/codex-run.sh" \
         --prompt "$SPECTEST_PROMPT" \
@@ -164,6 +206,13 @@ for engine in "${ACTIVE_ENGINES[@]}"; do
     run_cmd=$(echo "$engine_output" | grep '^RUN_CMD:' | tail -1 | sed 's/^RUN_CMD: *//' || true)
   fi
 
+  # Check if the run command is in the safe test allowlist
+  needs_review=false
+  if [[ -n "$run_cmd" ]] && ! _is_safe_test_cmd "$run_cmd"; then
+    needs_review=true
+    ai_buddies_debug "forge-spectest: $engine run_cmd needs review: $run_cmd"
+  fi
+
   # Build per-engine proposal
   if command -v jq &>/dev/null; then
     proposal=$(jq -n \
@@ -171,7 +220,8 @@ for engine in "${ACTIVE_ENGINES[@]}"; do
       --arg output "$engine_output" \
       --arg diff "$diff" \
       --arg run_cmd "$run_cmd" \
-      '{status:$status, output:$output, diff:$diff, run_cmd:$run_cmd}' 2>/dev/null) || proposal='{"status":"error","output":"","diff":"","run_cmd":""}'
+      --argjson needs_review "$([[ "$needs_review" == "true" ]] && echo true || echo false)" \
+      '{status:$status, output:$output, diff:$diff, run_cmd:$run_cmd, needs_review:$needs_review}' 2>/dev/null) || proposal='{"status":"error","output":"","diff":"","run_cmd":"","needs_review":false}'
     PROPOSALS_JSON=$(echo "$PROPOSALS_JSON" | jq --arg e "$engine" --argjson p "$proposal" '.[$e] = $p' 2>/dev/null) || true
   fi
 

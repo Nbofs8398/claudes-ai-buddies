@@ -3,7 +3,7 @@
 <img src="assets/banner.svg" alt="Claude's AI Buddies" width="100%"/>
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-105%2F105-brightgreen.svg)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-140%2F140-brightgreen.svg)](#-testing)
 [![Claude Code Plugin](https://img.shields.io/badge/Claude_Code-plugin-blueviolet.svg)](https://github.com/cukas/claude-plugins)
 
 *Three AI engines. One codebase. They compete, you ship.*
@@ -27,9 +27,11 @@ What if three AI engines could compete on the same coding task — and only the 
 
 ---
 
-## Forge — the flagship feature (v2.0)
+## Forge — the flagship feature
 
-Three AI engines independently implement the same task in isolated git worktrees. Automated fitness tests and composite quality scoring determine the winner.
+*Forge started as a `/brainstorm` session. Claude, Codex, and Gemini designed the concept together — the name, the architecture, the staged escalation model. The feature they planned is built by the three engines that imagined it.*
+
+Three AI engines independently implement the same task in isolated git worktrees. A staged pipeline — starter, challengers, critique-based synthesis — ensures the best solution wins. Claude orchestrates but never competes.
 
 ```
 /forge "Add input validation to math utils" --fitness "node src/math.test.js"
@@ -53,24 +55,25 @@ Winner: Gemini — score 89/100.
 
 **How it works:**
 
-1. **Context** — `ai_buddies_project_context()` reads your CLAUDE.md/README, recent commits, and detects language/conventions. Injected into every engine's prompt
-2. **Diverge** — each engine implements the task in its own git worktree. They self-test and iterate using their own internal loops (Claude's subagents, Codex's `--full-auto`, Gemini's `--yolo`)
-3. **Crucible** — `forge-fitness.sh` runs your test suite. `forge-score.sh` runs available linters and style checks. Composite score: diff size 30%, lint 15%, style 15%, files 10%, duration 5%, test pass 25%
-4. **Scoreboard** — results with composite scores. Close calls (within 5 points) are flagged
-5. **Cross-pollinate** *(optional)* — each engine sees all three solutions and refines the winner
+1. **Context** — reads your CLAUDE.md/README, recent commits, and detects language/conventions. Injected into every engine's prompt
+2. **Stage 1: Starter** — one engine runs first. If it scores >= 88 with clean lint and style, it's auto-accepted. No need to burn tokens on challengers
+3. **Stage 2: Challengers** — if the starter doesn't clear the bar, remaining engines run in parallel. All scored with composite fitness
+4. **Stage 3: Synthesis** — on close calls (spread < 8 points), losers send targeted critique hunks. The winner refines selectively. Only kept if the score improves
+5. **Scoreboard** — composite scores (diff size 30%, lint 15%, style 15%, files 10%, duration 5%, test pass 25%). Close calls flagged
 6. **Converge** — you approve the winning diff before it touches your working tree
 
-**New in v2.0:**
-- **`--async`** — run peer engines in background, continue your conversation
-- **Speculative tests** — omit `--fitness` and engines propose test suites. You pick the best, then forge proceeds
+**Features:**
+- **`--async`** — run engines in background, continue your conversation
+- **Speculative tests** — omit `--fitness` and engines propose test suites. Trust boundary validates commands before execution
 - **Composite scoring** — linters (ESLint, Ruff, ShellCheck, Clippy) + style checks + diff analysis = objective 0-100 score
-- **Project context** — engines see your conventions, commit style, and project description
+- **Baseline preflight** — warns if fitness passes on untouched code (non-discriminating test)
+- **Graceful degradation** — works with 3, 2, or 1 engine. Timeouts don't block the forge
 
 **Why this works:**
 - **Three different training sets** = three different approaches to the same problem. Blind spots cancel out
 - **Fitness tests, not vibes** — automated composite scoring means the best code wins, not the most confident pitch
 - **Engines self-correct** — each gets up to 600s to implement, test, fix, and iterate. No artificial time pressure
-- **Graceful degradation** — works with 3, 2, or 1 engine. Timeouts and errors don't block the forge
+- **Claude stays honest** — as pure orchestrator, Claude judges but never competes. No bias toward its own code
 
 ---
 
@@ -268,7 +271,7 @@ bash tests/run-tests.sh
 ```
 === claudes-ai-buddies test suite ===
   ...
-=== Results: 105/105 passed, 0 failed ===
+=== Results: 140/140 passed, 0 failed ===
 ```
 
 ---

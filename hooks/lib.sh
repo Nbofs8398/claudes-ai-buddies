@@ -72,6 +72,53 @@ ai_buddies_config_set() {
   mv "$tmp" "$AI_BUDDIES_CONFIG"
 }
 
+# ── Find claude binary ───────────────────────────────────────────────────────
+ai_buddies_find_claude() {
+  # Check explicit config override first
+  local configured
+  configured="$(ai_buddies_config "claude_path" "")"
+  if [[ -n "$configured" && -x "$configured" ]]; then
+    echo "$configured"
+    return 0
+  fi
+
+  # Standard PATH lookup
+  if command -v claude &>/dev/null; then
+    command -v claude
+    return 0
+  fi
+
+  # Common install locations
+  local candidates=(
+    "${HOME}/.local/bin/claude"
+    "/usr/local/bin/claude"
+    "${HOME}/.nvm/versions/node/*/bin/claude"
+  )
+  for pattern in "${candidates[@]}"; do
+    # shellcheck disable=SC2086
+    for bin in $pattern; do
+      if [[ -x "$bin" ]]; then
+        echo "$bin"
+        return 0
+      fi
+    done
+  done
+
+  return 1
+}
+
+# ── Get claude version ───────────────────────────────────────────────────────
+ai_buddies_claude_version() {
+  local claude_bin
+  claude_bin="$(ai_buddies_find_claude 2>/dev/null)" || return 1
+  "$claude_bin" --version 2>/dev/null | head -1
+}
+
+# ── Get claude model (optional override) ─────────────────────────────────────
+ai_buddies_claude_model() {
+  ai_buddies_config "claude_model" ""
+}
+
 # ── Find codex binary ───────────────────────────────────────────────────────
 ai_buddies_find_codex() {
   # Check explicit config override first
@@ -204,8 +251,9 @@ ai_buddies_sandbox() {
 }
 
 # ── Get default timeout (seconds) ───────────────────────────────────────────
+# Default 360s (6 min) — Codex regularly needs 5-6 min for non-trivial tasks.
 ai_buddies_timeout() {
-  ai_buddies_config "timeout" "120"
+  ai_buddies_config "timeout" "360"
 }
 
 # ── Timeout wrapper (shared by all scripts) ─────────────────────────────────
@@ -241,6 +289,9 @@ ai_buddies_build_review_prompt() {
   local target="$3"
   local diff_content=""
 
+  # Cap diff at 100K chars to avoid exceeding context windows or shell arg limits
+  local max_diff_chars=100000
+
   case "$target" in
     uncommitted)
       diff_content=$(cd "$cwd" && git diff HEAD 2>/dev/null || git diff 2>/dev/null || echo "(no diff available)")
@@ -257,6 +308,11 @@ ai_buddies_build_review_prompt() {
       diff_content=$(cd "$cwd" && git diff HEAD 2>/dev/null || echo "(no diff available)")
       ;;
   esac
+
+  # Truncate if too large
+  if [[ ${#diff_content} -gt $max_diff_chars ]]; then
+    diff_content="${diff_content:0:$max_diff_chars}"$'\n'"... (truncated — diff exceeded ${max_diff_chars} chars)"
+  fi
 
   cat <<EOF
 You are reviewing code changes. Provide a thorough code review covering:
@@ -355,30 +411,191 @@ ai_buddies_forge_timeout() {
   ai_buddies_config "forge_timeout" "600"
 }
 
-# ── Build forge prompt (F1) ─────────────────────────────────────────────────
-# Constructs engine prompt from task + fitness + context. Single source of truth.
+# ── Forge v2 config helpers ─────────────────────────────────────────────────
+ai_buddies_forge_auto_accept_score() {
+  ai_buddies_config "forge_auto_accept_score" "88"
+}
+
+ai_buddies_forge_clear_winner_spread() {
+  ai_buddies_config "forge_clear_winner_spread" "8"
+}
+
+ai_buddies_forge_enable_synthesis() {
+  ai_buddies_config "forge_enable_synthesis" "true"
+}
+
+ai_buddies_forge_max_critiques() {
+  ai_buddies_config "forge_max_critiques" "3"
+}
+
+ai_buddies_forge_starter_strategy() {
+  ai_buddies_config "forge_starter_strategy" "fixed"
+}
+
+ai_buddies_forge_fixed_starter() {
+  ai_buddies_config "forge_fixed_starter" "claude"
+}
+
+ai_buddies_forge_require_baseline_check() {
+  ai_buddies_config "forge_require_baseline_check" "true"
+}
+
+ai_buddies_forge_enabled_engines() {
+  ai_buddies_config "forge_enabled_engines" "claude,codex,gemini"
+}
+
+# ── Forge starter picker ────────────────────────────────────────────────────
+# Picks the starter engine based on strategy and available engines.
+# Usage: ai_buddies_forge_pick_starter "claude,codex,gemini"
+ai_buddies_forge_pick_starter() {
+  local available_csv="$1"
+  local strategy
+  strategy="$(ai_buddies_forge_starter_strategy)"
+
+  IFS=',' read -ra available <<< "$available_csv"
+
+  case "$strategy" in
+    rotate)
+      # Use seconds-based rotation across available engines
+      local count=${#available[@]}
+      if (( count > 0 )); then
+        local idx=$(( $(date +%s) % count ))
+        echo "${available[$idx]}"
+      else
+        echo "claude"
+      fi
+      ;;
+    fixed|*)
+      local preferred
+      preferred="$(ai_buddies_forge_fixed_starter)"
+      # Check if preferred is available
+      for e in "${available[@]}"; do
+        if [[ "$e" == "$preferred" ]]; then
+          echo "$preferred"
+          return 0
+        fi
+      done
+      # Fallback to first available
+      echo "${available[0]:-claude}"
+      ;;
+  esac
+}
+
+# ── Build forge prompt (F1 — v2 compressed) ─────────────────────────────────
+# Constructs engine prompt from task + fitness + context. Compressed format.
 # Usage: ai_buddies_build_forge_prompt "task" "fitness_cmd" "context_text"
 ai_buddies_build_forge_prompt() {
   local task="$1"
   local fitness="$2"
   local context="${3:-}"
 
-  local prompt="You are competing in a code forge against other AI engines. Implement this task so it passes the fitness test. Best implementation wins."
-  prompt+=$'\n\n'"TASK: ${task}"
-  prompt+=$'\n'"FITNESS TEST: ${fitness}"
+  local prompt="TASK"$'\n'"${task}"
+  prompt+=$'\n\n'"FITNESS"$'\n'"${fitness}"
 
   if [[ -n "$context" ]]; then
-    prompt+=$'\n\n'"PROJECT CONTEXT:"$'\n'"${context}"
+    prompt+=$'\n\n'"CONTEXT"$'\n'"${context}"
   fi
 
-  prompt+=$'\n\n'"RULES:"
-  prompt+=$'\n'"- Write the actual code — do not plan or ask questions."
-  prompt+=$'\n'"- Modify only files necessary. Follow existing conventions."
-  prompt+=$'\n'"- After implementing, RUN the fitness test yourself. If it fails, fix and retry until it passes."
-  prompt+=$'\n'"- Exit when you'\''re confident the fitness test passes. Take the time you need."
-  prompt+=$'\n'"- Be thorough but minimal. Fewest lines changed wins ties."
+  prompt+=$'\n\n'"CONSTRAINTS"
+  prompt+=$'\n'"- Write code, not plans. No questions."
+  prompt+=$'\n'"- Modify only necessary files. Follow existing conventions."
+  prompt+=$'\n'"- Run the fitness test. If it fails, fix and retry."
+  prompt+=$'\n'"- Exit when fitness passes. Fewest lines changed wins ties."
 
   printf '%s' "$prompt"
+}
+
+# ── Build critique prompt (v2 synthesis) ─────────────────────────────────────
+# Asks a losing engine to critique the winner's diff.
+# Usage: ai_buddies_build_critique_prompt "winner_engine" "winner_diff" "max_critiques"
+ai_buddies_build_critique_prompt() {
+  local winner="$1"
+  local diff="$2"
+  local max="${3:-3}"
+
+  # Cap diff at 50K to avoid context overflow
+  if [[ ${#diff} -gt 50000 ]]; then
+    diff="${diff:0:50000}"$'\n'"... (truncated)"
+  fi
+
+  local prompt="Review this winning implementation and find specific improvements."
+  prompt+=$'\n\n'"WINNER DIFF (from ${winner}):"$'\n'"${diff}"
+  prompt+=$'\n\n'"Respond with ONLY a JSON array of max ${max} critiques. No other text."
+  prompt+=$'\n'"Each critique must target the diff lines. No redesigns or rewrites."
+  prompt+=$'\n\n'"FORMAT:"
+  prompt+=$'\n''[{"file":"path","lines":"N-M","problem":"...","minimal_fix":"..."}]'
+  prompt+=$'\n\n'"Return [] if the implementation is solid."
+
+  printf '%s' "$prompt"
+}
+
+# ── Build synthesis prompt (v2 synthesis) ────────────────────────────────────
+# Asks the winner engine to refine based on critique hunks.
+# Usage: ai_buddies_build_synthesis_prompt "winner_diff" "critiques_text" "fitness_cmd"
+ai_buddies_build_synthesis_prompt() {
+  local diff="$1"
+  local critiques="$2"
+  local fitness="$3"
+
+  # Cap diff at 50K to avoid context overflow
+  if [[ ${#diff} -gt 50000 ]]; then
+    diff="${diff:0:50000}"$'\n'"... (truncated)"
+  fi
+
+  local prompt="TASK"$'\n'"Refine your implementation using these specific critiques. Apply only what improves the code."
+  prompt+=$'\n\n'"YOUR CURRENT DIFF:"$'\n'"${diff}"
+  prompt+=$'\n\n'"CRITIQUES TO ADDRESS:"$'\n'"${critiques}"
+  prompt+=$'\n\n'"FITNESS"$'\n'"${fitness}"
+  prompt+=$'\n\n'"CONSTRAINTS"
+  prompt+=$'\n'"- Apply valid critiques only. Reject vague or incorrect ones."
+  prompt+=$'\n'"- Run the fitness test after changes. Must still pass."
+  prompt+=$'\n'"- Keep changes minimal. Do not refactor beyond critiques."
+
+  printf '%s' "$prompt"
+}
+
+# ── Task-scoped context (v2 — lighter than project_context) ──────────────────
+# Only includes candidate files, fitness command, and top conventions.
+# Usage: ai_buddies_task_context "cwd" "task_description"
+ai_buddies_task_context() {
+  local cwd="${1:-$(pwd)}"
+  local task="${2:-}"
+  local ctx=""
+
+  # 1. Detect conventions (compact)
+  local conventions=""
+  [[ -f "${cwd}/.eslintrc" || -f "${cwd}/.eslintrc.json" || -f "${cwd}/eslint.config.js" ]] && conventions+="ESLint, "
+  [[ -f "${cwd}/.prettierrc" || -f "${cwd}/.prettierrc.json" ]] && conventions+="Prettier, "
+  [[ -f "${cwd}/pyproject.toml" ]] && grep -q "ruff" "${cwd}/pyproject.toml" 2>/dev/null && conventions+="Ruff, "
+  [[ -f "${cwd}/.shellcheckrc" ]] && conventions+="ShellCheck, "
+  conventions="${conventions%, }"
+  [[ -n "$conventions" ]] && ctx+="CONVENTIONS: ${conventions}"$'\n'
+
+  # 2. Detect languages
+  local langs=""
+  [[ -f "${cwd}/package.json" ]]     && langs+="JS/TS, "
+  [[ -f "${cwd}/pyproject.toml" || -f "${cwd}/requirements.txt" ]] && langs+="Python, "
+  [[ -f "${cwd}/Cargo.toml" ]]       && langs+="Rust, "
+  [[ -f "${cwd}/go.mod" ]]           && langs+="Go, "
+  langs="${langs%, }"
+  [[ -n "$langs" ]] && ctx+="LANGUAGES: ${langs}"$'\n'
+
+  # 3. Find candidate files from task keywords (if task provided)
+  if [[ -n "$task" ]] && command -v grep &>/dev/null; then
+    local keywords
+    # Extract likely filenames or identifiers from task
+    keywords=$(printf '%s' "$task" | grep -oE '[a-zA-Z_][a-zA-Z0-9_.-]+\.(ts|js|py|rs|go|sh|tsx|jsx)' | head -8)
+    if [[ -n "$keywords" ]]; then
+      ctx+="CANDIDATE FILES:"$'\n'
+      while IFS= read -r kw; do
+        local found
+        found=$(cd "$cwd" && find . -name "$kw" -not -path '*/node_modules/*' -not -path '*/.git/*' 2>/dev/null | head -3)
+        [[ -n "$found" ]] && ctx+="${found}"$'\n'
+      done <<< "$keywords"
+    fi
+  fi
+
+  printf '%s' "$ctx"
 }
 
 # ── Build spectest prompt (F3) ──────────────────────────────────────────────
@@ -485,6 +702,13 @@ ai_buddies_compute_forge_score() {
 
   # Hard filter: fail = 0
   [[ "$pass" != "true" ]] && echo "0" && return 0
+
+  # No-op guard (F1): If no lines changed, score is 0.
+  # This prevents false positives from non-discriminating fitness tests.
+  if (( diff_lines == 0 )); then
+    echo "0"
+    return 0
+  fi
 
   # Diff size score (30%): fewer lines = better. 0 lines=100, 500+=0
   local diff_score=100
