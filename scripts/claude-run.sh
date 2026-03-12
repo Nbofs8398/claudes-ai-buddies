@@ -73,6 +73,8 @@ CLAUDE_ARGS=(
 
 EXIT_CODE=0
 cd "$CWD"
+# Unset CLAUDECODE so the subprocess doesn't think it's nested inside a parent session
+unset CLAUDECODE 2>/dev/null || true
 ai_buddies_run_with_timeout "$TIMEOUT" "$CLAUDE_BIN" \
   "${CLAUDE_ARGS[@]}" \
   > "$OUTPUT_FILE" 2>"$ERROR_FILE" || EXIT_CODE=$?
