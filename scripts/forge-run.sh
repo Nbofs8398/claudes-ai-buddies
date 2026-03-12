@@ -47,6 +47,7 @@ done
 [[ -z "$FORGE_DIR" ]] && { echo "ERROR: --forge-dir is required" >&2; exit 1; }
 [[ -z "$TASK" ]]      && { echo "ERROR: --task is required" >&2; exit 1; }
 [[ -z "$FITNESS" ]]   && { echo "ERROR: --fitness is required" >&2; exit 1; }
+[[ -z "$CWD" ]]       && { echo "ERROR: --cwd is required (pass the repo working directory)" >&2; exit 1; }
 
 ai_buddies_debug "forge-run: forge_dir=$FORGE_DIR, task=$TASK, timeout=$TIMEOUT"
 
@@ -113,9 +114,8 @@ for e in "${ENGINES[@]}"; do
   [[ "$e" != "$STARTER" ]] && CHALLENGERS+=("$e")
 done
 
-# ── Resolve repo root from explicit --cwd or fallback to pwd ─────────────────
-# Using --cwd ensures correct repo even when invoked from a different directory.
-FORGE_CWD="${CWD:-$(pwd)}"
+# ── Resolve repo root from --cwd ─────────────────────────────────────────────
+FORGE_CWD="$CWD"
 REPO_ROOT=$(cd "$FORGE_CWD" && git rev-parse --show-toplevel 2>/dev/null) || REPO_ROOT=""
 HEAD_SHA=$(cd "$FORGE_CWD" && git rev-parse HEAD 2>/dev/null) || HEAD_SHA=""
 _FORGE_RUN_REPO_ROOT="$REPO_ROOT"

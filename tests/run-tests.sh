@@ -764,6 +764,10 @@ test_start "forge-run.sh requires --fitness"
 output=$(bash "${PLUGIN_ROOT}/scripts/forge-run.sh" --forge-dir /tmp --task "x" 2>&1 || true)
 assert_contains "$output" "ERROR"
 
+test_start "forge-run.sh requires --cwd"
+output=$(bash "${PLUGIN_ROOT}/scripts/forge-run.sh" --forge-dir /tmp --task "x" --fitness "true" 2>&1 || true)
+assert_contains "$output" "--cwd is required"
+
 # Full forge-run test with mock engines
 # v2: forge-run.sh creates worktrees itself and dispatches engines as subprocesses.
 # We mock claude by putting a mock in PATH that just writes output.
@@ -795,6 +799,7 @@ manifest_path=$(PATH="${MOCK_BIN_DIR}:${PATH}" bash "${PLUGIN_ROOT}/scripts/forg
   --task "test task" \
   --fitness "true" \
   --timeout 30 \
+  --cwd "$RUN_REPO" \
   --engines claude 2>&1 | tail -1)
 if [[ -f "$manifest_path" ]] && jq . "$manifest_path" &>/dev/null; then
   test_pass
@@ -1073,6 +1078,7 @@ bp_manifest_path=$(PATH="${BP_MOCK_DIR}:${PATH}" bash "${PLUGIN_ROOT}/scripts/fo
   --task "baseline test" \
   --fitness "true" \
   --timeout 30 \
+  --cwd "$BP_REPO" \
   --engines claude 2>"${BP_FORGE_DIR}/stderr.txt" | tail -1)
 bp_stderr=$(cat "${BP_FORGE_DIR}/stderr.txt" 2>/dev/null || true)
 
@@ -1156,6 +1162,7 @@ synth_manifest_path=$(PATH="${SYNTH_MOCK_DIR}:${PATH}" bash "${PLUGIN_ROOT}/scri
   --task "synth test" \
   --fitness "true" \
   --timeout 30 \
+  --cwd "$SYNTH_REPO" \
   --engines claude,codex 2>/dev/null | tail -1)
 if [[ -f "$synth_manifest_path" ]] && jq . "$synth_manifest_path" &>/dev/null; then
   test_pass
@@ -1228,6 +1235,22 @@ done
 cd "$PLUGIN_ROOT"
 rm -rf "$CWD_REPO" "$CWD_FORGE_DIR" "$CWD_MOCK_DIR"
 
+# Regression: --cwd is required — omitting it from a non-git dir must error early
+test_start "--cwd: required — errors without --cwd from non-git dir"
+NO_CWD_DIR=$(mktemp -d)
+no_cwd_output=$(cd "$NO_CWD_DIR" && bash "${PLUGIN_ROOT}/scripts/forge-run.sh" \
+  --forge-dir "$NO_CWD_DIR/forge" \
+  --task "no-cwd test" \
+  --fitness "true" \
+  --timeout 10 \
+  --engines claude 2>&1 || true)
+rm -rf "$NO_CWD_DIR"
+if [[ "$no_cwd_output" == *"--cwd is required"* ]]; then
+  test_pass
+else
+  test_fail "expected --cwd required error, got: $no_cwd_output"
+fi
+
 # ── 3d. Review diff truncation at 100K ──────────────────────────────────────
 test_start "review prompt: truncates diff > 100K chars"
 TRUNC_REPO=$(mktemp -d)
@@ -1270,6 +1293,7 @@ PATH="${WC_MOCK_DIR}:${PATH}" bash "${PLUGIN_ROOT}/scripts/forge-run.sh" \
   --task "cleanup test" \
   --fitness "true" \
   --timeout 30 \
+  --cwd "$WC_REPO" \
   --engines claude >/dev/null 2>&1 || true
 
 test_start "worktree cleanup: no dangling worktrees after forge"
