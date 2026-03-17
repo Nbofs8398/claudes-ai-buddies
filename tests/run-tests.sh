@@ -1798,9 +1798,9 @@ has_fields=$(jq -r 'has("id") and has("binary") and has("modes") and has("adapte
   "${PLUGIN_ROOT}/buddies/builtin/codex.json" 2>/dev/null)
 assert_eq "$has_fields" "true"
 
-test_start "plugin.json version is 3.0.0"
+test_start "plugin.json version is 3.1.0"
 pv=$(jq -r '.version' "${PLUGIN_ROOT}/.claude-plugin/plugin.json" 2>/dev/null)
-assert_eq "$pv" "3.0.0"
+assert_eq "$pv" "3.1.0"
 
 # ── Session-start with dynamic registry ──────────────────────────────────────
 echo ""
