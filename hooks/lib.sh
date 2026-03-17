@@ -848,15 +848,27 @@ ai_buddies_tribunal_max_buddies() {
 }
 
 # ── Build tribunal prompt ────────────────────────────────────────────────────
-# Usage: ai_buddies_build_tribunal_prompt "question" "position" ROUND TOTAL [prev_args]
+# Usage: ai_buddies_build_tribunal_prompt "question" "position" ROUND TOTAL [prev_args] [mode]
 ai_buddies_build_tribunal_prompt() {
   local question="$1"
   local position="$2"
   local round="$3"
   local total="$4"
   local prev_args="${5:-}"
+  local mode="${6:-adversarial}"
 
-  local prompt="ADVERSARIAL DEBATE — Round ${round}/${total}"
+  local prompt=""
+
+  case "$mode" in
+    socratic)
+      _ai_buddies_build_socratic_prompt "$question" "$position" "$round" "$total" "$prev_args"
+      return
+      ;;
+    *)
+      prompt="ADVERSARIAL DEBATE — Round ${round}/${total}"
+      ;;
+  esac
+
   prompt+=$'\n\n'"QUESTION: ${question}"
   prompt+=$'\n\n'"YOUR POSITION: ${position}"
   prompt+=$'\n\n'"EVIDENCE PROTOCOL:"
@@ -871,6 +883,69 @@ ai_buddies_build_tribunal_prompt() {
   if [[ -n "$prev_args" ]]; then
     prompt+=$'\n\n'"PREVIOUS ROUND ARGUMENTS:"$'\n'"${prev_args}"
     prompt+=$'\n\n'"ADDRESS the opposing arguments above. Rebut with evidence or concede specific points."
+  fi
+
+  printf '%s' "$prompt"
+}
+
+# ── Build Socratic tribunal prompt ──────────────────────────────────────────
+# Internal helper for socratic mode prompts.
+_ai_buddies_build_socratic_prompt() {
+  local question="$1"
+  local position="$2"
+  local round="$3"
+  local total="$4"
+  local prev_args="${5:-}"
+
+  local prompt="SOCRATIC INQUIRY — Round ${round}/${total}"
+  prompt+=$'\n\n'"TOPIC: ${question}"
+  prompt+=$'\n'"ROLE: ${position}"
+
+  if [[ "$round" -eq 1 ]]; then
+    prompt+=$'\n\n'"TASK: Generate 3-5 probing questions that would materially change the engineering decision if answered."
+    prompt+=$'\n'"Allowed type values: ASSUMPTION, CLARIFYING, EVIDENCE, VIEWPOINT, CONSEQUENCE, META."
+    prompt+=$'\n'"Each question must target one concrete gap, ambiguity, hidden assumption, or consequence visible in the codebase."
+    prompt+=$'\n\n'"Return a JSON array only. No markdown, no code fences, no prose."
+    prompt+=$'\n'"Schema:"
+    prompt+=$'\n'"["
+    prompt+=$'\n'"  {"
+    prompt+=$'\n'"    \"question_id\": \"Q1\","
+    prompt+=$'\n'"    \"type\": \"ASSUMPTION\","
+    prompt+=$'\n'"    \"question\": \"What happens when the cache is cold on deployment?\","
+    prompt+=$'\n'"    \"file\": \"src/cache/warmup.ts\","
+    prompt+=$'\n'"    \"lines\": \"14-28\","
+    prompt+=$'\n'"    \"evidence\": \"// No warmup logic exists\","
+    prompt+=$'\n'"    \"why_it_matters\": \"The current proposal assumes cache availability during first-request traffic.\""
+    prompt+=$'\n'"  }"
+    prompt+=$'\n'"]"
+    prompt+=$'\n\n'"Rules:"
+    prompt+=$'\n'"- Do not answer the topic."
+    prompt+=$'\n'"- Do not ask generic due-diligence questions."
+    prompt+=$'\n'"- If you cannot cite code for a question, omit that question."
+  else
+    prompt+=$'\n\n'"TASK: Answer the questions below with code evidence."
+    prompt+=$'\n'"Input contains questions authored by other interrogators."
+    prompt+=$'\n\n'"QUESTIONS:"
+    prompt+=$'\n'"${prev_args}"
+    prompt+=$'\n\n'"Return one JSON object per input question. No markdown, no code fences, no prose."
+    prompt+=$'\n'"Schema:"
+    prompt+=$'\n'"["
+    prompt+=$'\n'"  {"
+    prompt+=$'\n'"    \"question_id\": \"Q1\","
+    prompt+=$'\n'"    \"original_question\": \"What happens when cache is cold?\","
+    prompt+=$'\n'"    \"answer_status\": \"ANSWERED\","
+    prompt+=$'\n'"    \"answer\": \"No warmup logic exists, so the first request falls through to the DB path.\","
+    prompt+=$'\n'"    \"file\": \"src/cache/client.ts\","
+    prompt+=$'\n'"    \"lines\": \"45-52\","
+    prompt+=$'\n'"    \"evidence\": \"const get = async (key) => { ... }\","
+    prompt+=$'\n'"    \"deeper_question\": \"What is the p99 latency of the DB fallback path under load?\","
+    prompt+=$'\n'"    \"confidence\": \"HIGH\""
+    prompt+=$'\n'"  }"
+    prompt+=$'\n'"]"
+    prompt+=$'\n\n'"Rules:"
+    prompt+=$'\n'"- Use answer_status = ANSWERED or UNANSWERABLE."
+    prompt+=$'\n'"- If UNANSWERABLE, set file, lines, and evidence to null and explain what evidence is missing."
+    prompt+=$'\n'"- deeper_question may be null if no deeper question is justified."
   fi
 
   printf '%s' "$prompt"

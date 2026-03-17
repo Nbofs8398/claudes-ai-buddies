@@ -6,13 +6,13 @@
   "plugins": [
     {
       "name": "claudes-ai-buddies",
-      "description": "Spawn peer AI CLIs (Codex, Gemini) from Claude Code for brainstorming, delegation, and code reviews",
-      "version": "1.0.0",
+      "description": "Dynamic multi-AI buddy system — forge, tribunal, ELO leaderboard, any CLI",
+      "version": "3.1.0",
       "author": { "name": "cukas" },
       "source": "./",
       "category": "development",
       "homepage": "https://github.com/cukas/claudes-ai-buddies",
-      "tags": ["codex", "gemini", "openai", "peer-ai", "code-review", "brainstorm", "claude-code-plugin"]
+      "tags": ["codex", "gemini", "openai", "peer-ai", "code-review", "brainstorm", "forge", "tribunal", "elo", "claude-code-plugin"]
     }
   ]
 }

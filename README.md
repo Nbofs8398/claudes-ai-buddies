@@ -41,6 +41,7 @@ claude plugin install claudes-ai-buddies@cukas
 | `/brainstorm "task"` | Confidence bid — available buddies assess the task, you pick who builds it |
 | `/forge "task" --fitness "cmd"` | Competitive build with automated scoring |
 | `/tribunal "question"` | Adversarial debate — two buddies argue with evidence, Claude judges |
+| `/tribunal --socratic "question"` | Socratic inquiry — buddies probe assumptions with evidence, Claude synthesizes |
 | `/leaderboard` | Show ELO ratings from forge competitions |
 | `/add-buddy` | Register any CLI as a new buddy |
 | `/codex "prompt"` | Ask Codex anything — delegate, brainstorm, second opinion |
@@ -128,17 +129,30 @@ ELO updated: Gemini 1200→1216, Claude 1200→1184, Codex 1200→1184
 
 ---
 
-## Tribunal — Adversarial Debate
+## Tribunal — Adversarial Debate & Socratic Inquiry
 
+Two modes for different situations:
+
+**Adversarial** (default) — binary decisions:
 ```
 /tribunal "Should we refactor the auth middleware to use async/await?"
 ```
 
-Two buddies argue opposite positions with **evidence citations** (file:line). Claude judges based on evidence quality, not consensus.
+**Socratic** — open exploration:
+```
+/tribunal --socratic "Is our error handling strategy resilient enough?"
+/tribunal --socratic "What should we consider before migrating to a monorepo?"
+```
 
-- **Evidence protocol** — every claim requires `{file, lines, evidence, severity}`. No evidence = score zero
-- **Cross-examination** — configurable rounds of back-and-forth rebuttals
-- **Evidence-weighted judging** — quality (0-10) x severity (1-5) per claim
+| | Adversarial | Socratic |
+|---|---|---|
+| **AIs do** | Argue FOR vs AGAINST | Probe assumptions with questions |
+| **Claude does** | Judge — picks winner by evidence score | Synthesize — surfaces exposed assumptions |
+| **Best for** | Binary decisions (should/shouldn't) | Open exploration, architecture, bug investigation |
+| **Output** | Winner + evidence scorecards | Assumptions exposed + open questions + next steps |
+
+- **Evidence protocol** — every claim/question requires `{file, lines, evidence}`. No evidence = score zero
+- **Cross-examination** — configurable rounds (adversarial: rebuttals, Socratic: cross-answers)
 - **Auto-triggered** — fires on forge close calls or review disagreements
 
 ---

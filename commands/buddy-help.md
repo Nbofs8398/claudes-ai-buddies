@@ -3,7 +3,7 @@ name: buddy-help
 description: Reference for Claude's AI Buddies plugin
 ---
 
-# AI Buddies v3 — Help & Reference
+# AI Buddies v3.1 — Help & Reference
 
 ## Available Skills
 
@@ -16,6 +16,7 @@ description: Reference for Claude's AI Buddies plugin
 | `/brainstorm "topic"` | All | Multi-AI roundtable — all available buddies assess the task |
 | `/forge "task" --fitness "cmd"` | All | Competitive build — buddies build, automated scoring picks winner |
 | `/tribunal "question"` | 2+ | Adversarial debate — buddies argue opposite positions with evidence |
+| `/tribunal --socratic "question"` | 2+ | Socratic inquiry — buddies probe assumptions, Claude synthesizes |
 | `/leaderboard` | — | Show ELO ratings leaderboard |
 | `/add-buddy` | — | Register a new AI CLI as a buddy |
 | `/buddy-help` | — | This help reference |

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # claudes-ai-buddies — adversarial debate orchestrator (/tribunal)
 # Two+ buddies argue opposite positions with evidence citations, then Claude judges.
-# Usage: tribunal-run.sh --question "..." --cwd DIR [--rounds N] [--buddies N] [--timeout SECS]
+# Usage: tribunal-run.sh --question "..." --cwd DIR [--rounds N] [--buddies N] [--timeout SECS] [--mode adversarial|socratic]
 
 set -euo pipefail
 
@@ -16,6 +16,7 @@ CWD="$(pwd)"
 ROUNDS="$(ai_buddies_tribunal_rounds)"
 MAX_BUDDIES="$(ai_buddies_tribunal_max_buddies)"
 TIMEOUT="$(ai_buddies_forge_timeout)"
+MODE="adversarial"
 
 # ── Parse arguments ──────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -25,6 +26,14 @@ while [[ $# -gt 0 ]]; do
     --rounds)   ROUNDS="$2";      shift 2 ;;
     --buddies)  MAX_BUDDIES="$2"; shift 2 ;;
     --timeout)  TIMEOUT="$2";     shift 2 ;;
+    --mode)
+      case "$2" in
+        adversarial|socratic) MODE="$2" ;;
+        *) echo "ERROR: --mode must be adversarial or socratic (got: $2)" >&2; exit 1 ;;
+      esac
+      shift 2
+      ;;
+    --socratic) MODE="socratic"; shift 1 ;;
     *)
       echo "ERROR: Unknown argument: $1" >&2
       exit 1
@@ -35,7 +44,13 @@ done
 [[ -z "$QUESTION" ]] && { echo "ERROR: --question is required" >&2; exit 1; }
 [[ -d "$CWD" ]]      || { echo "ERROR: --cwd '$CWD' does not exist" >&2; exit 1; }
 
-ai_buddies_debug "tribunal-run: question=$QUESTION, rounds=$ROUNDS, max_buddies=$MAX_BUDDIES"
+# Socratic mode is a fixed 2-round protocol (round 1 asks, round 2 answers)
+if [[ "$MODE" == "socratic" && "$ROUNDS" -ne 2 ]]; then
+  echo "ERROR: socratic mode requires exactly 2 rounds (round 1 asks, round 2 answers)" >&2
+  exit 1
+fi
+
+ai_buddies_debug "tribunal-run: question=$QUESTION, rounds=$ROUNDS, max_buddies=$MAX_BUDDIES, mode=$MODE"
 
 # ── Cleanup trap ─────────────────────────────────────────────────────────────
 _TRIBUNAL_PIDS=()
@@ -96,20 +111,29 @@ REPO_ROOT=$(cd "$CWD" && git rev-parse --show-toplevel 2>/dev/null) || REPO_ROOT
 HEAD_SHA=$(cd "$CWD" && git rev-parse HEAD 2>/dev/null) || HEAD_SHA=""
 _TRIBUNAL_REPO_ROOT="$REPO_ROOT"
 
-# ── Assign adversarial positions ─────────────────────────────────────────────
-# Position 1: "YES / FOR" — argues the affirmative
-# Position 2: "NO / AGAINST" — argues the negative
+# ── Assign positions based on mode ───────────────────────────────────────────
 POSITIONS=()
-POSITIONS+=("ARGUE FOR: Yes, this is correct / should be done / is the best approach. Find evidence that supports this position.")
-POSITIONS+=("ARGUE AGAINST: No, this is wrong / should not be done / there's a better way. Find evidence that contradicts this position.")
-# If more than 2, alternate
-for i in $(seq 2 $((${#DEBATERS[@]} - 1))); do
-  if (( i % 2 == 0 )); then
-    POSITIONS+=("ARGUE FOR (additional perspective): Find further supporting evidence, especially edge cases.")
-  else
-    POSITIONS+=("ARGUE AGAINST (additional perspective): Find further counterevidence, especially risks and costs.")
-  fi
-done
+case "$MODE" in
+  socratic)
+    POSITIONS+=("FOUNDATIONS QUESTIONER — Ask CLARIFYING, ASSUMPTION, and EVIDENCE questions. Probe what is unclear, what is taken for granted, and what lacks proof.")
+    POSITIONS+=("IMPLICATIONS QUESTIONER — Ask VIEWPOINT, CONSEQUENCE, and META questions. Challenge perspectives, explore what follows, and question whether this is the right question.")
+    for i in $(seq 2 $((${#DEBATERS[@]} - 1))); do
+      POSITIONS+=("WILD-CARD QUESTIONER — Ask any type of probing question. Look for what the other questioners missed — edge cases, historical context, alternative framings.")
+    done
+    ;;
+  *)
+    # Adversarial (default): FOR vs AGAINST
+    POSITIONS+=("ARGUE FOR: Yes, this is correct / should be done / is the best approach. Find evidence that supports this position.")
+    POSITIONS+=("ARGUE AGAINST: No, this is wrong / should not be done / there's a better way. Find evidence that contradicts this position.")
+    for i in $(seq 2 $((${#DEBATERS[@]} - 1))); do
+      if (( i % 2 == 0 )); then
+        POSITIONS+=("ARGUE FOR (additional perspective): Find further supporting evidence, especially edge cases.")
+      else
+        POSITIONS+=("ARGUE AGAINST (additional perspective): Find further counterevidence, especially risks and costs.")
+      fi
+    done
+    ;;
+esac
 
 # ── Create worktrees for each debater ────────────────────────────────────────
 for id in "${DEBATERS[@]}"; do
@@ -146,7 +170,7 @@ for round in $(seq 1 "$ROUNDS"); do
     ROUND_DEBATERS+=("$id")
 
     # Build round-specific prompt
-    tribunal_prompt=$(ai_buddies_build_tribunal_prompt "$QUESTION" "$position" "$round" "$ROUNDS" "$PREV_ROUND_ARGS")
+    tribunal_prompt=$(ai_buddies_build_tribunal_prompt "$QUESTION" "$position" "$round" "$ROUNDS" "$PREV_ROUND_ARGS" "$MODE")
 
     ai_buddies_dispatch_buddy "$id" "$wt" "$tribunal_prompt" "$TIMEOUT" "$TRIBUNAL_DIR" "$PLUGIN_ROOT" \
       > "${TRIBUNAL_DIR}/${id}-round${round}-output.txt" 2>&1 &
@@ -192,18 +216,20 @@ if command -v jq &>/dev/null; then
   jq -n \
     --arg question "$QUESTION" \
     --argjson rounds "$ROUNDS" \
+    --arg mode "$MODE" \
     --arg debaters "$(IFS=,; echo "${DEBATERS[*]}")" \
     --argjson arguments "$ALL_ARGUMENTS" \
     '{
       question: $question,
+      mode: $mode,
       rounds: $rounds,
       debaters: ($debaters | split(",")),
       arguments: $arguments
     }' > "$MANIFEST" 2>/dev/null || {
-    echo "{\"question\":$(ai_buddies_escape_json "$QUESTION"),\"debaters\":[],\"arguments\":{}}" > "$MANIFEST"
+    echo "{\"question\":$(ai_buddies_escape_json "$QUESTION"),\"mode\":\"${MODE}\",\"debaters\":[],\"arguments\":{}}" > "$MANIFEST"
   }
 else
-  echo "{\"question\":$(ai_buddies_escape_json "$QUESTION"),\"debaters\":[],\"arguments\":{}}" > "$MANIFEST"
+  echo "{\"question\":$(ai_buddies_escape_json "$QUESTION"),\"mode\":\"${MODE}\",\"debaters\":[],\"arguments\":{}}" > "$MANIFEST"
 fi
 
 # ── Cleanup worktrees ────────────────────────────────────────────────────────

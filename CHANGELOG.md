@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.1.0 (2026-03-17)
+
+*Socratic mode — tribunal learns to question, not just argue.*
+
+### Added
+- **Socratic mode for `/tribunal`** — `--socratic` flag switches from adversarial debate (FOR vs AGAINST) to Socratic inquiry. Two buddies probe the premise with questions backed by code evidence, then cross-answer each other's questions. Claude synthesizes exposed assumptions and open questions instead of picking a winner
+- **6 Socratic question types** — Foundations (CLARIFYING, ASSUMPTION, EVIDENCE) and Implications (VIEWPOINT, CONSEQUENCE, META), mapped from educational Socratic method to code-specific probing
+- **`--mode` flag** for tribunal — extensible mode system (`adversarial`, `socratic`). `--socratic` shorthand also supported
+- **Socratic output format** — Assumptions Exposed table, Key Questions Answered, Remaining Open Questions, Question Quality scores, Recommended Next Steps
+- **Question quality scoring** — each buddy scored on specificity, evidence, actionability, and novelty (0-40) for ELO-compatible relative ranking
+
+### Changed
+- **tribunal-run.sh** — accepts `--mode` and `--socratic` flags, assigns question domains instead of adversarial positions for Socratic mode, manifest includes `mode` field
+- **lib.sh** — `ai_buddies_build_tribunal_prompt()` accepts optional 6th `mode` param (backward-compatible), new `_ai_buddies_build_socratic_prompt()` helper with round-aware prompt templates
+- **SKILL.md** — full documentation for both modes, when-to-use guidance, separate output formats
+- **buddy-help.md** — tribunal entry updated with mode information
+- **README.md** — tribunal section updated with Socratic mode examples
+
 ## 3.0.0 (2026-03-14)
 
 *Multi-AI Darwinism — the buddy roster is now dynamic. Any CLI can join the arena.*
