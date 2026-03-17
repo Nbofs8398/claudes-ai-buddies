@@ -1,5 +1,29 @@
 # Changelog
 
+## 3.1.0 (2026-03-17)
+
+*Six tribunal modes — adversarial, Socratic, steelman, red-team, synthesis, postmortem.*
+
+### Added
+- **6 tribunal modes** via `--mode` flag or shorthand flags:
+  - `adversarial` (default, unchanged) — FOR vs AGAINST, Claude judges
+  - `--socratic` — probe assumptions with questions, Claude synthesizes
+  - `--steelman` — argue the other side's strongest case, Claude calibrates
+  - `--red-team` — attack from multiple angles (reliability, security, performance), Claude assesses risk
+  - `--synthesis` — each proposes a solution, Round 2 hybridizes, Claude merges
+  - `--postmortem` — investigate failure from execution/environment angles, Claude builds timeline
+- **Mode-specific prompt builders** — `_ai_buddies_build_steelman_prompt()`, `_ai_buddies_build_redteam_prompt()`, `_ai_buddies_build_synthesis_prompt()`, `_ai_buddies_build_postmortem_prompt()`
+- **Split mode documentation** — each mode has its own guide at `skills/tribunal/modes/{mode}.md` with evidence format, judging criteria, and output template
+- **Round constraints** — socratic, red-team, synthesis, postmortem enforce exactly 2 rounds
+- **Mode validation** — invalid `--mode` values rejected with error listing valid options
+
+### Changed
+- **tribunal-run.sh** — multi-mode positions, shorthand flags, mode validation, manifest includes `mode` field
+- **lib.sh** — `ai_buddies_build_tribunal_prompt()` dispatches to mode-specific helpers (backward-compatible)
+- **SKILL.md** — rewritten as slim dispatcher with mode table, delegates to per-mode docs
+- **README.md** — tribunal section shows all 6 modes with comparison table
+- **buddy-help.md** — all modes listed in skills table
+
 ## 3.0.0 (2026-03-14)
 
 *Multi-AI Darwinism — the buddy roster is now dynamic. Any CLI can join the arena.*

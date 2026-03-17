@@ -3,7 +3,7 @@ name: buddy-help
 description: Reference for Claude's AI Buddies plugin
 ---
 
-# AI Buddies v3 — Help & Reference
+# AI Buddies v3.1 — Help & Reference
 
 ## Available Skills
 
@@ -15,7 +15,12 @@ description: Reference for Claude's AI Buddies plugin
 | `/gemini-review` | Gemini | Code review via Gemini (uncommitted, branch, commit) |
 | `/brainstorm "topic"` | All | Multi-AI roundtable — all available buddies assess the task |
 | `/forge "task" --fitness "cmd"` | All | Competitive build — buddies build, automated scoring picks winner |
-| `/tribunal "question"` | 2+ | Adversarial debate — buddies argue opposite positions with evidence |
+| `/tribunal "question"` | 2+ | Adversarial debate — FOR vs AGAINST with evidence |
+| `/tribunal --socratic` | 2+ | Socratic — probe assumptions, Claude synthesizes |
+| `/tribunal --steelman` | 2+ | Steelman — argue other side's strongest case |
+| `/tribunal --red-team` | 2+ | Red-team — attack from multiple angles |
+| `/tribunal --synthesis` | 2+ | Synthesis — propose solutions, then hybridize |
+| `/tribunal --postmortem` | 2+ | Postmortem — investigate failure from different angles |
 | `/leaderboard` | — | Show ELO ratings leaderboard |
 | `/add-buddy` | — | Register a new AI CLI as a buddy |
 | `/buddy-help` | — | This help reference |

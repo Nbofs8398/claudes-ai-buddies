@@ -3,7 +3,7 @@
 <img src="assets/banner.svg" alt="Claude's AI Buddies" width="100%"/>
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-225%2B-brightgreen.svg)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-247%2B-brightgreen.svg)](#-testing)
 [![Claude Code Plugin](https://img.shields.io/badge/Claude_Code-plugin-blueviolet.svg)](https://github.com/cukas/claude-plugins)
 
 *Any AI can join. They compete. You ship.*
@@ -40,7 +40,7 @@ claude plugin install claudes-ai-buddies@cukas
 |---------|-------------|
 | `/brainstorm "task"` | Confidence bid — available buddies assess the task, you pick who builds it |
 | `/forge "task" --fitness "cmd"` | Competitive build with automated scoring |
-| `/tribunal "question"` | Adversarial debate — two buddies argue with evidence, Claude judges |
+| `/tribunal "question"` | Evidence-based debate — 6 modes (adversarial, socratic, steelman, red-team, synthesis, postmortem) |
 | `/leaderboard` | Show ELO ratings from forge competitions |
 | `/add-buddy` | Register any CLI as a new buddy |
 | `/codex "prompt"` | Ask Codex anything — delegate, brainstorm, second opinion |
@@ -128,18 +128,36 @@ ELO updated: Gemini 1200→1216, Claude 1200→1184, Codex 1200→1184
 
 ---
 
-## Tribunal — Adversarial Debate
+## Tribunal — Evidence-Based Debate
 
 ```
 /tribunal "Should we refactor the auth middleware to use async/await?"
 ```
 
-Two buddies argue opposite positions with **evidence citations** (file:line). Claude judges based on evidence quality, not consensus.
+Two buddies debate with **evidence citations** (file:line). Claude judges based on evidence quality, not consensus. Auto-triggers on forge close calls or review disagreements.
 
-- **Evidence protocol** — every claim requires `{file, lines, evidence, severity}`. No evidence = score zero
-- **Cross-examination** — configurable rounds of back-and-forth rebuttals
-- **Evidence-weighted judging** — quality (0-10) x severity (1-5) per claim
-- **Auto-triggered** — fires on forge close calls or review disagreements
+<details>
+<summary><strong>6 debate modes</strong></summary>
+
+```
+/tribunal "question"                  # adversarial (default)
+/tribunal --socratic "question"       # probe assumptions
+/tribunal --steelman "question"       # argue other side's best case
+/tribunal --red-team "question"       # attack from all angles
+/tribunal --synthesis "question"      # propose + hybridize
+/tribunal --postmortem "question"     # investigate failure
+```
+
+| Mode | AIs do | Claude does | Best for |
+|------|--------|-------------|----------|
+| **adversarial** | FOR vs AGAINST | Judge — picks winner | Binary decisions |
+| **socratic** | Probe assumptions | Synthesize insights | Early exploration |
+| **steelman** | Argue other side's best case | Calibrate strength | Avoiding bias |
+| **red-team** | Attack, no defense | Prioritize risks | Poking holes |
+| **synthesis** | Propose, then hybridize | Evaluate + merge | Third option |
+| **postmortem** | Investigate from angles | Timeline + root cause | Bug investigation |
+
+</details>
 
 ---
 
@@ -232,7 +250,7 @@ bash tests/run-tests.sh
 ```
 === claudes-ai-buddies test suite ===
   ...
-=== Results: 225+/225+ passed, 0 failed ===
+=== Results: 247+/247+ passed, 0 failed ===
 ```
 
 ---

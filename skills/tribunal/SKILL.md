@@ -1,31 +1,40 @@
 ---
 name: tribunal
-description: Adversarial debate — two AIs argue opposite positions with evidence, Claude judges
+description: Multi-mode AI debate — adversarial, Socratic, steelman, red-team, synthesis, or postmortem with evidence
 ---
 
-# /tribunal — Adversarial Debate
+# /tribunal — Multi-Mode AI Debate
 
-Two AI buddies argue opposite positions on a codebase question. Every claim requires FILE:LINE evidence. Claude judges based on evidence quality, not consensus.
+Two AI buddies engage on a codebase question using one of six modes. Every claim requires FILE:LINE evidence.
+
+## Modes
+
+| Mode | Flag | AIs do | Claude's role | Best for |
+|------|------|--------|---------------|----------|
+| adversarial | *(default)* | Argue FOR vs AGAINST | Judge — picks winner | Binary decisions, should/shouldn't |
+| socratic | `--socratic` | Probe assumptions with questions | Synthesizer — surfaces insights | Early exploration, unclear framing |
+| steelman | `--steelman` | Argue the OTHER side's strongest case | Calibrator — shows true strength of each side | Avoiding confirmation bias |
+| red-team | `--red-team` | Attack from different angles, no defense | Risk assessor — prioritized vulnerability table | Poking holes in designs/plans |
+| synthesis | `--synthesis` | Each proposes a solution, then hybridize | Merger — evaluates proposals + hybrid | Finding a third option |
+| postmortem | `--postmortem` | Investigate failure from different angles | Investigator — unified timeline + root cause | Bug investigation, incident analysis |
 
 ## How to invoke
 
 ```
-/tribunal "Should we refactor the auth middleware to use async/await?"
-/tribunal "Is the current caching strategy causing the memory leak?"
-/tribunal "Would switching from REST to gRPC improve our API latency?"
+/tribunal "Should we refactor the auth middleware?"
+/tribunal --socratic "Is our error handling resilient enough?"
+/tribunal --steelman "Should we migrate to microservices?"
+/tribunal --red-team "Review our new payment flow"
+/tribunal --synthesis "How should we restructure the data layer?"
+/tribunal --postmortem "Why did the deploy fail yesterday?"
+/tribunal --mode red-team "Audit the new API endpoints"
 ```
-
-## Trigger modes
-
-1. **Manual:** User types `/tribunal "question"`
-2. **Forge close call:** Auto-triggered when forge scores are within 3 points — was the winner really better?
-3. **Review disagreement:** Auto-triggered when `/codex-review` and `/gemini-review` give conflicting assessments
 
 ## Step-by-step workflow
 
 ### Phase 0: Setup
 
-1. **Parse the question.** Extract the debatable claim from the user's message.
+1. **Parse the question and mode.** Check for mode flags (`--socratic`, `--steelman`, `--red-team`, `--synthesis`, `--postmortem`, or `--mode X`). Default: adversarial.
 2. **Detect available buddies:**
 
 ```bash
@@ -33,99 +42,71 @@ source "${CLAUDE_PLUGIN_ROOT}/hooks/lib.sh"
 AVAILABLE=$(ai_buddies_available_buddies)
 ```
 
-3. Require at least 2 buddies. If only 1 is available, explain and offer alternatives.
-4. **Tell the user** which buddies will debate and how many rounds.
+3. Require at least 2 buddies.
+4. **Tell the user** which buddies will participate, the mode, and round count.
 
-### Phase 1: Dispatch adversarial debate
-
-Run the tribunal orchestrator:
+### Phase 1: Dispatch
 
 ```bash
 MANIFEST_PATH=$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tribunal-run.sh" \
   --question "THE_QUESTION" \
   --cwd "$(pwd)" \
+  --mode MODE_NAME \
   --rounds 2 \
   --timeout 600)
 ```
 
-### Phase 2: Read and judge
+### Phase 2: Read results
 
-Read `$MANIFEST_PATH` (tribunal-manifest.json). It contains:
+Read `$MANIFEST_PATH` (tribunal-manifest.json):
 
 ```json
 {
   "question": "...",
+  "mode": "adversarial|socratic|steelman|red-team|synthesis|postmortem",
   "rounds": 2,
   "debaters": ["codex", "gemini"],
-  "arguments": {
-    "codex": { "round_1": "...", "round_2": "..." },
-    "gemini": { "round_1": "...", "round_2": "..." }
-  }
+  "arguments": { ... }
 }
 ```
 
-### Phase 3: Evidence-weighted judging
+### Phase 3: Evaluate
 
-**Your most important job as judge:**
+**Read the mode-specific guide** for how to evaluate results and format output:
 
-1. **Parse evidence objects** from each debater's arguments. Expected format:
-   ```json
-   {"claim":"...", "file":"path", "lines":"N-M", "evidence":"quoted code", "severity":1-5}
-   ```
-
-2. **Verify each citation.** Read the referenced file and line range. Score evidence quality 0-10:
-   - 10: Exact quote matches, line numbers correct, directly supports claim
-   - 7-9: Correct file, approximate lines, relevant evidence
-   - 4-6: Right area but stretched interpretation
-   - 1-3: Tangential or misquoted
-   - 0: Fabricated or wrong file
-
-3. **Score = evidence_quality (0-10) x severity (1-5).** Max 50 per claim.
-
-4. **No-evidence claims score ZERO.** This is the key differentiator from brainstorm.
-
-5. **Present the verdict** using the format below.
-
-## Output format
-
-```markdown
-## Tribunal: [question summary]
-
-### Arguments
-
-**FOR ([buddy name]):**
-| Claim | File:Lines | Evidence Quality | Severity | Score |
-|-------|-----------|-----------------|----------|-------|
-| ... | path:N-M | X/10 | Y/5 | Z/50 |
-
-**AGAINST ([buddy name]):**
-| Claim | File:Lines | Evidence Quality | Severity | Score |
-|-------|-----------|-----------------|----------|-------|
-| ... | path:N-M | X/10 | Y/5 | Z/50 |
-
-### Verdict
-
-**Winner: [FOR/AGAINST]** — Total score X vs Y.
-
-[2-3 sentence summary of why, highlighting the strongest evidence from each side]
-
-### Key findings
-- [Bullet point of most impactful evidence found]
-- [Bullet point of claims that had weak/no evidence]
 ```
+${CLAUDE_PLUGIN_ROOT}/skills/tribunal/modes/{mode}.md
+```
+
+Read the file matching the mode from the manifest, then follow its judging/synthesis instructions and output format.
+
+## Round constraints
+
+| Mode | Rounds | Reason |
+|------|--------|--------|
+| adversarial | Flexible (default 2) | More rounds = deeper rebuttals |
+| steelman | Flexible (default 2) | Like adversarial but with reversed positions |
+| socratic | Fixed 2 | Round 1 asks, Round 2 answers |
+| red-team | Fixed 2 | Round 1 attacks, Round 2 chains attacks |
+| synthesis | Fixed 2 | Round 1 proposes, Round 2 hybridizes |
+| postmortem | Fixed 2 | Round 1 investigates, Round 2 cross-examines |
+
+## Auto-triggers
+
+1. **Forge close call:** When forge scores are within 3 points
+2. **Review disagreement:** When `/codex-review` and `/gemini-review` conflict
 
 ## Configuration
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `tribunal_rounds` | `2` | Cross-examination rounds |
-| `tribunal_max_buddies` | `2` | Max debaters (2 is ideal for adversarial) |
+| `tribunal_rounds` | `2` | Default round count |
+| `tribunal_max_buddies` | `3` | Max debaters |
 
 ## Rules
 
-- **Evidence over eloquence.** A well-cited claim beats a persuasive paragraph.
-- **Verify citations.** Always read the referenced files to confirm evidence.
-- **No-evidence = zero.** Enforce strictly.
-- **Claude is the judge, not a debater.** You evaluate, you don't argue.
-- **Always clean up** worktrees after the debate.
-- **Keep it focused.** Tribunal is for specific codebase questions, not general opinions.
+- **Evidence over eloquence.** Every claim needs file:line evidence.
+- **Verify citations.** Always read referenced files to confirm.
+- **No-evidence = zero.** Enforce in all modes.
+- **Follow the mode guide.** Each mode has different judging criteria and output format.
+- **Always clean up** worktrees after the session.
