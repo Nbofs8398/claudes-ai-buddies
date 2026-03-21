@@ -4,6 +4,34 @@
 
 set -euo pipefail
 
+# ── Shell compatibility (bash + zsh) ─────────────────────────────────────────
+# BASH_SOURCE[0] is empty when sourced from zsh; %(%) is zsh-only.
+# Resolve once at source-time so all functions can use it.
+if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+  _AI_BUDDIES_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+elif [[ -n "${ZSH_VERSION:-}" ]]; then
+  _AI_BUDDIES_LIB_DIR="$(cd "$(dirname "${(%):-%x}")" && pwd)"
+else
+  _AI_BUDDIES_LIB_DIR=""
+fi
+
+# Portable array split — replaces bash-only `read -ra`.
+# Usage: _ai_buddies_split_into VARNAME SEPARATOR STRING
+_ai_buddies_split_into() {
+  local _varname="$1" _sep="$2" _str="$3"
+  local _arr=() _item
+  while [[ -n "$_str" ]]; do
+    if [[ "$_str" == *"$_sep"* ]]; then
+      _arr+=("${_str%%"$_sep"*}")
+      _str="${_str#*"$_sep"}"
+    else
+      _arr+=("$_str")
+      break
+    fi
+  done
+  eval "${_varname}=(\"\${_arr[@]}\")"
+}
+
 # ── Constants ────────────────────────────────────────────────────────────────
 AI_BUDDIES_HOME="${HOME}/.claudes-ai-buddies"
 AI_BUDDIES_CONFIG="${AI_BUDDIES_HOME}/config.json"
@@ -247,9 +275,9 @@ ai_buddies_project_context() {
 }
 
 # ── Forge timeout (F1) ──────────────────────────────────────────────────────
-# Reads forge_timeout config key, default 600. Used by forge-run.sh and SKILL.md.
+# Reads forge_timeout config key, default 900. Used by forge-run.sh and SKILL.md.
 ai_buddies_forge_timeout() {
-  ai_buddies_config "forge_timeout" "600"
+  ai_buddies_config "forge_timeout" "900"
 }
 
 # ── Forge v2 config helpers ─────────────────────────────────────────────────
@@ -293,7 +321,7 @@ ai_buddies_forge_pick_starter() {
   local strategy
   strategy="$(ai_buddies_forge_starter_strategy)"
 
-  IFS=',' read -ra available <<< "$available_csv"
+  _ai_buddies_split_into available ',' "$available_csv"
 
   case "$strategy" in
     rotate)
@@ -605,7 +633,7 @@ ai_buddies_escape_json() {
 # ── Registry directory ───────────────────────────────────────────────────────
 # Returns paths to buddy definitions: builtin + user directories.
 ai_buddies_registry_dir() {
-  local plugin_root="${PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+  local plugin_root="${PLUGIN_ROOT:-$(cd "${_AI_BUDDIES_LIB_DIR}/.." 2>/dev/null && pwd)}"
   local builtin_dir="${plugin_root}/buddies/builtin"
   local user_dir="${AI_BUDDIES_HOME}/buddies"
   echo "${builtin_dir}:${user_dir}"
@@ -615,7 +643,8 @@ ai_buddies_registry_dir() {
 ai_buddies_list_buddies() {
   local registry
   registry="$(ai_buddies_registry_dir)"
-  IFS=':' read -ra dirs <<< "$registry"
+  local dirs=()
+  _ai_buddies_split_into dirs ':' "$registry"
 
   local seen=()
   for dir in "${dirs[@]}"; do
@@ -641,7 +670,8 @@ _ai_buddies_find_buddy_json() {
   local id="$1"
   local registry
   registry="$(ai_buddies_registry_dir)"
-  IFS=':' read -ra dirs <<< "$registry"
+  local dirs=()
+  _ai_buddies_split_into dirs ':' "$registry"
 
   # User dir first (override), then builtin
   local user_dir="${dirs[1]:-}"
@@ -797,7 +827,7 @@ ai_buddies_dispatch_buddy() {
   local prompt="$3"
   local timeout="$4"
   local output_dir="${5:-$(dirname "$wt")}"
-  local plugin_root="${6:-${PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}}"
+  local plugin_root="${6:-${PLUGIN_ROOT:-$(cd "${_AI_BUDDIES_LIB_DIR}/.." 2>/dev/null && pwd)}}"
 
   local adapter
   adapter=$(ai_buddies_buddy_config "$id" "adapter_script" "buddy-run.sh")

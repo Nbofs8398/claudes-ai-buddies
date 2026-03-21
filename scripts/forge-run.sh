@@ -17,7 +17,7 @@ FORGE_DIR=""
 TASK=""
 FITNESS=""
 TIMEOUT="$(ai_buddies_forge_timeout)"
-FITNESS_TIMEOUT="120"
+FITNESS_TIMEOUT="300"
 STARTER=""
 REQUESTED_ENGINES=""
 AUTO_ACCEPT="$(ai_buddies_forge_auto_accept_score)"
@@ -131,6 +131,23 @@ _create_worktree_for() {
       return 1
     }
     _FORGE_RUN_WTS+=("$_LAST_WORKTREE")
+
+    # Symlink node_modules so fitness commands (tsc, jest, etc.) work in worktree.
+    # Git worktrees never include node_modules — without this, fitness always fails.
+    if [[ -d "${REPO_ROOT}/node_modules" && ! -e "$_LAST_WORKTREE/node_modules" ]]; then
+      ln -s "${REPO_ROOT}/node_modules" "$_LAST_WORKTREE/node_modules" 2>/dev/null || true
+      ai_buddies_debug "forge-run: symlinked node_modules into wt-${engine}"
+    fi
+    # Also symlink per-package node_modules (pnpm workspaces)
+    for pkg_nm in "${REPO_ROOT}"/packages/*/node_modules; do
+      [[ -d "$pkg_nm" ]] || continue
+      local pkg_name
+      pkg_name="$(basename "$(dirname "$pkg_nm")")"
+      local target_dir="$_LAST_WORKTREE/packages/${pkg_name}"
+      if [[ -d "$target_dir" && ! -e "${target_dir}/node_modules" ]]; then
+        ln -s "$pkg_nm" "${target_dir}/node_modules" 2>/dev/null || true
+      fi
+    done
   else
     ai_buddies_debug "forge-run: cannot determine repo root"
     _LAST_WORKTREE=""
@@ -155,8 +172,8 @@ _score_engine() {
   local wt="${FORGE_DIR}/wt-${engine}"
   [[ -d "$wt" ]] || return 1
 
-  # Generate diff
-  (cd "$wt" && git add -A && git diff --cached > "${FORGE_DIR}/${engine}-patch.diff") 2>/dev/null || true
+  # Generate diff (exclude node_modules, tsbuildinfo, and other build artifacts)
+  (cd "$wt" && git add -A -- ':!node_modules' ':!**/node_modules' ':!*.tsbuildinfo' && git diff --cached > "${FORGE_DIR}/${engine}-patch.diff") 2>/dev/null || true
 
   # Check for empty diff (no-op)
   local diff_size
